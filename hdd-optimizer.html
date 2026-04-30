@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>HDD Bore Packing Optimizer</title>
+
+<!--
+================================================================================
+  HDD BORE PACKING OPTIMIZER
+  Version: 1.0.0
+  Built: 2026
+  Author: Generated with Claude (Anthropic) — claude.ai
+================================================================================
+
+  OVERVIEW
+  --------
+  A single-file web application for horizontal directional drilling (HDD)
+  crews to optimize conduit bundle configurations within a constrained bore
+  diameter. Accounts for soil geology, reamer sizing, and mixed product
+  inventories. No build step, no dependencies, no backend required.
+
+  DEPLOYMENT
+  ----------
+  Drop this single file on any static web host:
+    - Netlify:       drag-and-drop at netlify.com/drop
+    - GitHub Pages:  push to a repo, enable Pages in Settings
+    - Cloudflare Pages, Vercel, AWS S3+CloudFront, Azure Static Web Apps
+    - Internal web server: copy to any folder served over HTTP/HTTPS
+
+  Works in all modern browsers on phone, tablet, and desktop.
+  No install, no app store, no certificates required beyond HTTPS on the host.
+
+  UPDATING THE PRODUCT CATALOG
+  -----------------------------
+  The product catalog is defined in the PRODUCT_CATALOG array below (search
+  for "=== PRODUCT CATALOG ==="). Each entry is a plain JavaScript object.
+
+  To ADD a product, append a new object to the array following this template:
+
+    {
+      id:         'unique_id',        // Short unique string, no spaces (e.g. 'p2', 'fp1814')
+      family:     'hdpe',             // 'hdpe' or 'futurepath' — controls which section it appears in
+      label:      '2" SDR 11',        // Display name shown in UI and results
+      od_in:      2.375,              // Outside diameter in INCHES (use effective OD for bundles)
+      sdr:        11,                 // SDR rating — used to calculate ID. Set null for bundles.
+      colorL:     '#185FA5',          // Hex color, light mode
+      colorD:     '#85B7EB',          // Hex color, dark mode
+      microducts: '7× 18/14mm',      // OPTIONAL: shown in tooltip for FuturePath bundles only
+    }
+
+  SDR 11 HDPE PIPE DIMENSIONS (for reference when adding sizes):
+    Nominal   OD (in)    Wall (in)    ID (in)
+    1"        1.315      0.120        1.076
+    1.25"     1.660      0.151        1.358
+    1.5"      1.900      0.173        1.554
+    2"        2.375      0.216        1.943
+    3"        3.500      0.318        2.864
+    4"        4.500      0.409        3.682
+    6"        6.625      0.602        5.421
+
+  ID is always calculated as: ID = OD × (1 - 2/SDR)
+
+  DURALINE FUTUREPATH BUNDLE DIMENSIONS:
+    Product              Effective OD    Internal configuration
+    FP 7-way 16/12       2.030"          7× 16mm OD / 12mm ID microducts
+    FP 7-way 18/14       2.270"          7× 18mm OD / 14mm ID microducts
+  (Use effective bundle OD as od_in; set sdr: null for all bundles)
+
+  PRODUCT LIBRARY URLS (for reference when sourcing new products):
+    Duraline FuturePath:  https://www.duraline.com/products/futurepath/
+    ISCO Industries HDPE: https://www.isco-pipe.com/products/hdpe-pipe/
+    WL Plastics HDPE:     https://www.wlplastics.com/products/
+
+  GEOLOGY MULTIPLIERS
+  -------------------
+  Defined in the GEOLOGY array (search "=== GEOLOGY SETTINGS ===").
+  The multiplier converts reamer OD to effective bore constraint:
+    effective_bore = reamer_OD / multiplier
+  Adjust multipliers to match your crew's field experience.
+
+  SOLVER SETTINGS
+  ---------------
+  The INTENSITY_SETTINGS array controls the five solver intensity levels.
+  Each level specifies:
+    strategies:  number of distinct geometric initialization strategies
+    iters:       physics simulation iterations per strategy
+  Increase these values for more thorough solving at the cost of speed.
+
+  VERSION HISTORY
+  ---------------
+  1.0.0  Initial release. Features:
+         - Geology-aware bore constraint (7 soil types + custom multiplier)
+         - Reamer diameter slider (4"–36")
+         - Mixed-product circle packing optimizer
+         - Multi-strategy physics placement engine with jiggle phase
+         - Optimal mixed packing mode (solver chooses quantities)
+         - Optimal selected inventory mode (user specifies quantities)
+         - Excluded items shown outside bore with ✕ marker
+         - Annular space / slurry return velocity calculations
+         - Hover tooltips with full pipe dimensions
+         - Live progress indicator with Fast→Maximum intensity control
+         - Stale-result warning when inputs change after a solve
+         - Dark mode support
+
+================================================================================
+-->
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--color-background-primary,#fff);color:var(--color-text-primary,#111)}
+@media(prefers-color-scheme:dark){
+  :root{
+    --color-background-primary:#1a1a18;
+    --color-background-secondary:#232320;
+    --color-background-info:#1a2a3a;
+    --color-background-success:#1a2a1a;
+    --color-background-warning:#2a2010;
+    --color-text-primary:#e8e6de;
+    --color-text-secondary:#9a9688;
+    --color-text-info:#60b0e8;
+    --color-text-warning:#d4a840;
+    --color-border-primary:#4a4840;
+    --color-border-secondary:#3a3830;
+    --color-border-tertiary:#2e2c28;
+    --color-border-info:#2a4a6a;
+    --color-border-warning:#4a3810;
+  }
+}
+@media(prefers-color-scheme:light){
+  :root{
+    --color-background-primary:#ffffff;
+    --color-background-secondary:#f5f4f0;
+    --color-background-info:#e8f2fb;
+    --color-background-success:#e8f5e8;
+    --color-background-warning:#fdf6e3;
+    --color-text-primary:#1a1a16;
+    --color-text-secondary:#6a6860;
+    --color-text-info:#1060a0;
+    --color-text-warning:#805010;
+    --color-border-primary:#c8c4b8;
+    --color-border-secondary:#dedad0;
+    --color-border-tertiary:#eae8e0;
+    --color-border-info:#90c0e8;
+    --color-border-warning:#d4b060;
+  }
+}
+.app{max-width:900px;margin:0 auto;padding:16px}
+.app-header{margin-bottom:20px;padding-bottom:14px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.app-title{font-size:18px;font-weight:600;color:var(--color-text-primary);margin-bottom:2px}
+.app-subtitle{font-size:12px;color:var(--color-text-secondary)}
+.app-version{font-size:10px;color:var(--color-text-secondary);margin-top:2px;opacity:.7}
+.section-label{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.card{background:var(--color-background-secondary);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.geo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:8px;margin-bottom:4px}
+.geo-btn{padding:8px 10px;border:0.5px solid var(--color-border-secondary);border-radius:8px;font-size:12px;cursor:pointer;background:var(--color-background-primary);color:var(--color-text-secondary);text-align:left;line-height:1.4;transition:all .15s}
+.geo-btn:hover:not(.active){background:var(--color-background-secondary)}
+.geo-btn .geo-name{font-weight:500;display:block}
+.geo-btn .geo-mult{font-size:11px;opacity:.8}
+.reamer-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.reamer-row input[type=range]{flex:1;accent-color:var(--color-text-info)}
+.reamer-val{font-weight:500;min-width:54px;font-size:14px}
+.mult-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.mult-row label{font-size:12px;color:var(--color-text-secondary);white-space:nowrap}
+.mult-row input[type=number]{width:72px;padding:4px 8px;font-size:13px;border:0.5px solid var(--color-border-secondary);border-radius:8px;background:var(--color-background-primary);color:var(--color-text-primary)}
+.derived-box{background:var(--color-background-primary);border:0.5px solid var(--color-border-info);border-radius:10px;padding:10px 14px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.derived-item{display:flex;flex-direction:column}
+.derived-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-secondary)}
+.derived-val{font-size:16px;font-weight:500;color:var(--color-text-info);margin-top:1px}
+.derived-sub{font-size:11px;color:var(--color-text-secondary)}
+.mode-toggle{display:flex;margin-bottom:12px;border:0.5px solid var(--color-border-secondary);border-radius:10px;overflow:hidden}
+.mode-btn{flex:1;padding:9px 12px;font-size:12px;font-weight:500;cursor:pointer;background:var(--color-background-primary);color:var(--color-text-secondary);border:none;border-right:0.5px solid var(--color-border-secondary);transition:all .15s;line-height:1.4;text-align:center}
+.mode-btn:last-child{border-right:none}
+.mode-btn:hover:not(.active){background:var(--color-background-secondary)}
+.mode-btn.active{background:var(--color-background-info);color:var(--color-text-info);font-weight:600}
+.mode-btn .mode-sub{font-size:10px;font-weight:400;opacity:.8;display:block;margin-top:1px}
+.inventory-card{background:var(--color-background-secondary);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.product-family{margin-bottom:10px}
+.product-family:last-child{margin-bottom:0}
+.family-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--color-text-secondary);margin-bottom:6px;padding-bottom:4px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.pipe-toggle-row{display:flex;flex-direction:column;gap:5px}
+.product-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pipe-btn{padding:5px 11px;border:0.5px solid var(--color-border-secondary);border-radius:8px;font-size:12px;cursor:pointer;background:var(--color-background-primary);color:var(--color-text-secondary);transition:all .15s;white-space:nowrap}
+.pipe-btn:hover:not(.on){background:var(--color-background-secondary)}
+.spinner{display:flex;align-items:center;border:0.5px solid var(--color-border-secondary);border-radius:8px;overflow:hidden;height:28px}
+.spinner-btn{width:26px;height:100%;border:none;background:var(--color-background-primary);color:var(--color-text-secondary);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .1s}
+.spinner-btn:hover{background:var(--color-background-secondary)}
+.spinner-val{width:28px;text-align:center;font-size:13px;font-weight:500;background:var(--color-background-primary);color:var(--color-text-primary);border-left:0.5px solid var(--color-border-tertiary);border-right:0.5px solid var(--color-border-tertiary)}
+.qty-display{font-size:12px;color:var(--color-text-secondary);padding:4px 10px;border:0.5px dashed var(--color-border-tertiary);border-radius:8px;min-width:60px;text-align:center;font-style:italic}
+.qty-display.has-qty{color:var(--color-text-primary);font-style:normal;font-weight:500}
+.intensity-card{background:var(--color-background-secondary);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.intensity-row{display:flex;align-items:center;gap:10px}
+.intensity-row input[type=range]{flex:1;accent-color:var(--color-text-info)}
+.intensity-val{font-weight:500;font-size:12px;min-width:60px;text-align:right;color:var(--color-text-primary)}
+.solve-area{margin-bottom:16px}
+.solve-btn{width:100%;padding:10px;font-size:13px;font-weight:500;cursor:pointer;border:0.5px solid var(--color-border-secondary);border-radius:10px;background:var(--color-background-primary);color:var(--color-text-primary);transition:all .15s;margin-bottom:8px}
+.solve-btn:hover{background:var(--color-background-secondary)}
+.solve-btn:active{transform:scale(.98)}
+.solve-btn:disabled{opacity:.5;cursor:default;transform:none}
+.progress-wrap{display:none}
+.progress-bar{height:5px;background:var(--color-border-tertiary);border-radius:3px;overflow:hidden;margin-bottom:4px}
+.progress-fill{height:100%;background:var(--color-text-info);border-radius:3px;transition:width .15s}
+.progress-label{font-size:11px;color:var(--color-text-secondary);text-align:center}
+.main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media(max-width:600px){.main{grid-template-columns:1fr}.geo-grid{grid-template-columns:1fr 1fr}}
+.canvas-card{background:var(--color-background-secondary);border-radius:12px;border:0.5px solid var(--color-border-tertiary);padding:14px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.canvas-wrap{position:relative;width:100%;max-width:320px}
+canvas{display:block;width:100%;cursor:crosshair}
+.tooltip{position:absolute;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--color-text-primary);pointer-events:none;opacity:0;transition:opacity .12s;white-space:nowrap;z-index:10;line-height:1.7}
+.tooltip.visible{opacity:1}
+.tooltip-name{font-weight:500;font-size:12px;margin-bottom:2px}
+.tooltip-family{font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;opacity:.75}
+.legend-row{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--color-text-secondary)}
+.ld{width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:3px}
+.results-col{display:flex;flex-direction:column;gap:10px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat-chip{background:var(--color-background-secondary);border-radius:8px;padding:8px 10px}
+.stat-chip-label{font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em}
+.stat-chip-val{font-size:16px;font-weight:500;margin-top:2px}
+.stat-chip-sub{font-size:10px;color:var(--color-text-secondary);margin-top:1px}
+.annular-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-warning);border-radius:8px;padding:10px 13px}
+.annular-title{font-size:11px;font-weight:500;color:var(--color-text-warning);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.annular-table{width:100%;font-size:11px;border-collapse:collapse}
+.annular-table td{padding:3px 0;color:var(--color-text-secondary)}
+.annular-table td:last-child{text-align:right;font-weight:500;color:var(--color-text-primary)}
+.excluded-card{background:var(--color-background-primary);border:0.5px solid #e57373;border-radius:8px;padding:10px 13px}
+.excluded-title{font-size:11px;font-weight:500;color:#c62828;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+.excluded-detail{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
+.result-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:9px 12px;cursor:pointer;transition:border .1s}
+.result-card:hover{background:var(--color-background-secondary)}
+.result-card.active{border:2px solid var(--color-border-info)}
+.result-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.result-combo{font-size:12px;font-weight:500}
+.result-pct{font-size:13px;font-weight:500;color:var(--color-text-info)}
+.result-detail{font-size:11px;color:var(--color-text-secondary)}
+.mini-bar-wrap{height:4px;background:var(--color-border-tertiary);border-radius:2px;margin-top:4px}
+.mini-bar-fill{height:100%;border-radius:2px;background:var(--color-text-info)}
+.results-list-label{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em}
+.status-msg{font-size:12px;color:var(--color-text-secondary);text-align:center;padding:12px 0}
+.stale-notice{font-size:11px;color:var(--color-text-warning);text-align:center;padding:4px 0;display:none;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="app-header">
+  <div class="app-title">HDD Bore Packing Optimizer</div>
+  <div class="app-subtitle">Conduit bundle configuration for horizontal directional drilling</div>
+  <div class="app-version">v1.0.0</div>
+</div>
+
+<div class="section-label">Step 1 — Soil conditions</div>
+<div class="card">
+  <div class="geo-grid" id="geo-grid"></div>
+  <div class="mult-row">
+    <label>Custom multiplier:</label>
+    <input type="number" id="custom-mult" min="1.0" max="3.0" step="0.05" value="" placeholder="e.g. 1.65" oninput="onCustomMult(this.value)">
+    <span style="font-size:11px;color:var(--color-text-secondary)">overrides geology selection</span>
+  </div>
+</div>
+
+<div class="section-label">Step 2 — Reamer diameter</div>
+<div class="card">
+  <div class="reamer-row">
+    <input type="range" id="reamer-slider" min="4" max="36" value="12" step="0.25" oninput="onReamerChange(this.value)">
+    <span class="reamer-val" id="reamer-display">12.000"</span>
+  </div>
+  <div style="font-size:11px;color:var(--color-text-secondary)" id="reamer-mm-label">304.80 mm</div>
+</div>
+
+<div class="derived-box">
+  <div class="derived-item"><span class="derived-label">Geology</span><span class="derived-val" id="d-geo">—</span></div>
+  <div class="derived-item"><span class="derived-label">Multiplier</span><span class="derived-val" id="d-mult">—</span></div>
+  <div class="derived-item"><span class="derived-label">Reamer OD</span><span class="derived-val" id="d-reamer">—</span><span class="derived-sub" id="d-reamer-mm">—</span></div>
+  <div class="derived-item"><span class="derived-label">Effective bore</span><span class="derived-val" id="d-bore">—</span><span class="derived-sub" id="d-bore-mm">—</span></div>
+</div>
+
+<div class="section-label">Solving mode</div>
+<div class="mode-toggle">
+  <button class="mode-btn active" id="mode-opt" onclick="setMode('optimal')">
+    Optimal mixed packing
+    <span class="mode-sub">Solver chooses quantities</span>
+  </button>
+  <button class="mode-btn" id="mode-sel" onclick="setMode('selected')">
+    Optimal selected inventory
+    <span class="mode-sub">You choose quantities</span>
+  </button>
+</div>
+
+<div class="section-label">Step 3 — Available pipe &amp; conduit inventory</div>
+<div class="inventory-card">
+  <div class="product-family">
+    <div class="family-label">SDR 11 HDPE conduit</div>
+    <div class="pipe-toggle-row" id="toggles-hdpe"></div>
+  </div>
+  <div class="product-family" style="margin-top:10px">
+    <div class="family-label">Duraline FuturePath microduct bundles</div>
+    <div class="pipe-toggle-row" id="toggles-fp"></div>
+  </div>
+</div>
+
+<div class="section-label">Solver intensity</div>
+<div class="intensity-card">
+  <div class="intensity-row">
+    <span style="font-size:11px;color:var(--color-text-secondary)">Fast</span>
+    <input type="range" id="intensity-slider" min="1" max="5" value="3" step="1" oninput="onIntensityChange(this.value)">
+    <span style="font-size:11px;color:var(--color-text-secondary)">Thorough</span>
+    <span class="intensity-val" id="intensity-val">Balanced</span>
+  </div>
+  <div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px" id="intensity-desc">8 strategies · 1500 iters · jiggle phase</div>
+</div>
+
+<div class="stale-notice" id="stale-notice">⚠ Settings changed — press Solve to recalculate</div>
+<div class="solve-area">
+  <button class="solve-btn" id="solve-btn" onclick="runSolver()">Solve ↗</button>
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="progress-label" id="progress-label">Initializing…</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="canvas-card">
+    <div style="font-size:11px;font-weight:500;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:10px;padding:2px 10px;text-align:center" id="bore-badge">—</div>
+    <div class="canvas-wrap">
+      <canvas id="packCanvas" width="320" height="320"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <div class="legend-row" id="legend-row"></div>
+  </div>
+  <div class="results-col">
+    <div class="stat-grid">
+      <div class="stat-chip"><div class="stat-chip-label">Fill ratio</div><div class="stat-chip-val" id="s-fill">—</div></div>
+      <div class="stat-chip"><div class="stat-chip-label">Product count</div><div class="stat-chip-val" id="s-count">—</div></div>
+      <div class="stat-chip"><div class="stat-chip-label">Bundle area</div><div class="stat-chip-val" id="s-used">—</div><div class="stat-chip-sub" id="s-used-sub">—</div></div>
+      <div class="stat-chip"><div class="stat-chip-label">Void area</div><div class="stat-chip-val" id="s-void">—</div></div>
+    </div>
+    <div class="annular-card">
+      <div class="annular-title">⬡ Annular space — mud return</div>
+      <table class="annular-table" id="annular-table"><tr><td colspan="2" style="font-style:italic">Run solver to calculate</td></tr></table>
+    </div>
+    <div id="excluded-wrap" style="display:none">
+      <div class="excluded-card">
+        <div class="excluded-title">✕ Did not fit</div>
+        <div class="excluded-detail" id="excluded-detail">—</div>
+      </div>
+    </div>
+    <div class="results-list-label" id="results-label">Top configurations</div>
+    <div id="results-list"><div class="status-msg">Configure geology and reamer, then press Solve</div></div>
+  </div>
+</div>
+
+</div><!-- /.app -->
+
+<script>
+// =============================================================================
+// === GEOLOGY SETTINGS ========================================================
+// =============================================================================
+// Multiplier converts reamer OD to effective bore: bore = reamer / multiplier
+// Adjust values to match your crew's field experience and geotechnical reports.
+
+const GEOLOGY = [
+  { id:'rock',      name:'Hard rock',          mult:1.50, note:'Stable walls',        colorL:'#6B5E3E', colorD:'#C4AE78' },
+  { id:'cobble',    name:'Cobbles/boulders',   mult:1.75, note:'Irregular profile',   colorL:'#7A4A1E', colorD:'#D4956A' },
+  { id:'densesand', name:'Dense sand/gravel',  mult:1.50, note:'Good stability',      colorL:'#8A7020', colorD:'#D4B84A' },
+  { id:'loosesand', name:'Loose/running sand', mult:2.00, note:'Bore collapse risk',  colorL:'#B06010', colorD:'#F0A050' },
+  { id:'clay',      name:'Soft clay/silt',     mult:1.75, note:'Swell risk',          colorL:'#4A7A40', colorD:'#88C478' },
+  { id:'mixed',     name:'Mixed face',         mult:1.75, note:'Conservative default',colorL:'#2A6A8A', colorD:'#60B0D8' },
+  { id:'peat',      name:'Soft organic/peat',  mult:2.00, note:'Max clearance',       colorL:'#5A3A7A', colorD:'#A882D4' },
+];
+
+// =============================================================================
+// === PRODUCT CATALOG =========================================================
+// =============================================================================
+// Add, remove, or modify products here to update the inventory pick list.
+// See the developer notes at the top of this file for the full field reference.
+//
+// ADDING A PRODUCT — copy and modify this template:
+//
+//   {
+//     id:         'my_product',    // unique string, no spaces
+//     family:     'hdpe',          // 'hdpe' or 'futurepath'
+//     label:      '2" SDR 11',     // display name
+//     od_in:      2.375,           // outside diameter in inches
+//     sdr:        11,              // SDR rating (null for bundles)
+//     colorL:     '#185FA5',       // light mode color
+//     colorD:     '#85B7EB',       // dark mode color
+//     microducts: '7× 18/14mm',   // optional, FuturePath bundles only
+//   },
+
+const PRODUCT_CATALOG = [
+
+  // ── SDR 11 HDPE Conduit ───────────────────────────────────────────────────
+  {
+    id:'p1',    family:'hdpe',
+    label:'1" SDR 11',       od_in:1.315, sdr:11,
+    colorL:'#4a7a10',        colorD:'#97C459',
+  },
+  {
+    id:'p1q',   family:'hdpe',
+    label:'1.25" SDR 11',    od_in:1.660, sdr:11,
+    colorL:'#1D9E75',        colorD:'#5DCAA5',
+  },
+  {
+    id:'p1h',   family:'hdpe',
+    label:'1.5" SDR 11',     od_in:1.900, sdr:11,
+    colorL:'#0e7a8a',        colorD:'#4DC8DC',
+  },
+  {
+    id:'p2',    family:'hdpe',
+    label:'2" SDR 11',        od_in:2.375, sdr:11,
+    colorL:'#185FA5',         colorD:'#85B7EB',
+  },
+  {
+    id:'p3',    family:'hdpe',
+    label:'3" SDR 11',        od_in:3.500, sdr:11,
+    colorL:'#BA7517',         colorD:'#EF9F27',
+  },
+  {
+    id:'p4',    family:'hdpe',
+    label:'4" SDR 11',        od_in:4.500, sdr:11,
+    colorL:'#993C1D',         colorD:'#F0997B',
+  },
+  {
+    id:'p6',    family:'hdpe',
+    label:'6" SDR 11',        od_in:6.625, sdr:11,
+    colorL:'#7a1060',         colorD:'#D870C0',
+  },
+
+  // ── Duraline FuturePath Microduct Bundles ─────────────────────────────────
+  // Effective OD is the sheathed bundle outside diameter.
+  // Source: https://www.duraline.com/products/futurepath/
+  {
+    id:'fp1612', family:'futurepath',
+    label:'FP 7-way 16/12',  od_in:2.030, sdr:null,
+    colorL:'#5B21B6',         colorD:'#A78BFA',
+    microducts:'7× 16/12mm microducts',
+  },
+  {
+    id:'fp1814', family:'futurepath',
+    label:'FP 7-way 18/14',  od_in:2.270, sdr:null,
+    colorL:'#7C1FAD',         colorD:'#D09EF5',
+    microducts:'7× 18/14mm microducts',
+  },
+
+];
+
+// =============================================================================
+// === SOLVER INTENSITY SETTINGS ===============================================
+// =============================================================================
+// Five levels from Fast (index 0) to Maximum (index 4).
+// strategies: number of distinct geometric initialization strategies per combo
+// iters:      physics simulation iterations per strategy
+
+const INTENSITY_SETTINGS = [
+  { label:'Fast',     desc:'4 strategies · 800 iters',   strategies:4,  iters:800  },
+  { label:'Moderate', desc:'6 strategies · 1200 iters',  strategies:6,  iters:1200 },
+  { label:'Balanced', desc:'8 strategies · 1500 iters',  strategies:8,  iters:1500 },
+  { label:'Thorough', desc:'12 strategies · 2000 iters', strategies:12, iters:2000 },
+  { label:'Maximum',  desc:'16 strategies · 3000 iters', strategies:16, iters:3000 },
+];
+
+// =============================================================================
+// === APPLICATION CODE — no changes needed below this line ====================
+// =============================================================================
+
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+
+function geoColor(g)  { return isDark ? g.colorD : g.colorL; }
+function pipeColor(p) { return isDark ? p.colorD : p.colorL; }
+function pipeOD_mm(p) { return p.od_in * 25.4; }
+function pipeID_mm(p) { return p.sdr ? pipeOD_mm(p) * (1 - 2/p.sdr) : null; }
+
+let selectedGeo  = GEOLOGY[5];
+let customMult   = null;
+let reamIn       = 12.0;
+let activePipes  = new Set(['p2', 'p3']);
+let userQtys     = {};
+let solveMode    = 'optimal';
+let intensityLevel = 3;
+let currentSolutions = [];
+let drawnCircles     = [];
+let hasSolved        = false;
+
+function activeMult()      { return customMult !== null ? customMult : selectedGeo.mult; }
+function effectiveBoreIn() { return reamIn / activeMult(); }
+function getBoreR()        { return effectiveBoreIn() * 25.4 / 2; }
+function getReamR()        { return reamIn * 25.4 / 2; }
+function markStale()       { if (hasSolved) document.getElementById('stale-notice').style.display = 'block'; }
+function clearStale()      { document.getElementById('stale-notice').style.display = 'none'; }
+
+function setMode(m) {
+  solveMode = m;
+  document.getElementById('mode-opt').classList.toggle('active', m === 'optimal');
+  document.getElementById('mode-sel').classList.toggle('active', m === 'selected');
+  document.getElementById('results-label').textContent = m === 'optimal' ? 'Top configurations' : 'Best fit result';
+  buildToggles();
+  document.getElementById('results-list').innerHTML = '<div class="status-msg">Press Solve to run</div>';
+  document.getElementById('excluded-wrap').style.display = 'none';
+  markStale();
+}
+
+function onIntensityChange(v) {
+  intensityLevel = parseInt(v);
+  const s = INTENSITY_SETTINGS[intensityLevel - 1];
+  document.getElementById('intensity-val').textContent  = s.label;
+  document.getElementById('intensity-desc').textContent = s.desc;
+}
+
+function buildGeoButtons() {
+  const grid = document.getElementById('geo-grid');
+  grid.innerHTML = '';
+  GEOLOGY.forEach(g => {
+    const isActive = g.id === selectedGeo.id && customMult === null;
+    const btn = document.createElement('button');
+    btn.className = 'geo-btn' + (isActive ? ' active' : '');
+    btn.innerHTML = `<span class="geo-name">${g.name}</span><span class="geo-mult">${g.mult}× · ${g.note}</span>`;
+    if (isActive) { const c = geoColor(g); btn.style.background = c+'33'; btn.style.color = c; btn.style.borderColor = c+'99'; }
+    else { btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
+    btn.onclick = () => { selectedGeo = g; customMult = null; document.getElementById('custom-mult').value = ''; buildGeoButtons(); updateDerived(); markStale(); };
+    grid.appendChild(btn);
+  });
+}
+
+function onCustomMult(v) {
+  const n = parseFloat(v);
+  customMult = (v === '' || isNaN(n) || n < 1) ? null : Math.max(1.0, Math.min(3.0, n));
+  buildGeoButtons(); updateDerived(); markStale();
+}
+
+function onReamerChange(v) {
+  reamIn = parseFloat(v);
+  document.getElementById('reamer-display').textContent   = reamIn.toFixed(3) + '"';
+  document.getElementById('reamer-mm-label').textContent  = (reamIn * 25.4).toFixed(2) + ' mm';
+  updateDerived(); markStale();
+}
+
+function updateDerived() {
+  const mult = activeMult(), boreIn = effectiveBoreIn();
+  document.getElementById('d-geo').textContent      = customMult !== null ? 'Custom override' : selectedGeo.name;
+  document.getElementById('d-mult').textContent     = mult.toFixed(2) + '×';
+  document.getElementById('d-reamer').textContent   = reamIn.toFixed(3) + '"';
+  document.getElementById('d-reamer-mm').textContent = (reamIn * 25.4).toFixed(2) + ' mm';
+  document.getElementById('d-bore').textContent     = boreIn.toFixed(3) + '"';
+  document.getElementById('d-bore-mm').textContent  = (boreIn * 25.4).toFixed(2) + ' mm';
+  document.getElementById('bore-badge').textContent =
+    'Eff. bore ' + boreIn.toFixed(3) + '" (' + (boreIn*25.4).toFixed(1) + ' mm)  ·  reamer ' + reamIn.toFixed(3) + '" ÷ ' + mult.toFixed(2) + '×';
+}
+
+function buildToggles() {
+  ['hdpe', 'futurepath'].forEach(fam => {
+    const row = document.getElementById(fam === 'hdpe' ? 'toggles-hdpe' : 'toggles-fp');
+    row.innerHTML = '';
+    PRODUCT_CATALOG.filter(p => p.family === fam).forEach(p => {
+      const on = activePipes.has(p.id), c = pipeColor(p);
+      const rowDiv = document.createElement('div'); rowDiv.className = 'product-row';
+      const btn = document.createElement('button');
+      btn.className = 'pipe-btn' + (on ? ' on' : ''); btn.textContent = p.label;
+      if (on) { btn.style.background = c+'33'; btn.style.color = c; btn.style.borderColor = c+'88'; }
+      btn.onclick = () => {
+        if (activePipes.has(p.id)) { activePipes.delete(p.id); delete userQtys[p.id]; }
+        else activePipes.add(p.id);
+        buildToggles(); markStale();
+      };
+      rowDiv.appendChild(btn);
+      if (solveMode === 'selected') {
+        if (on) {
+          if (!userQtys[p.id]) userQtys[p.id] = 1;
+          const spinner = document.createElement('div'); spinner.className = 'spinner';
+          const minus = document.createElement('button'); minus.className = 'spinner-btn'; minus.textContent = '−';
+          minus.onclick = () => { if (userQtys[p.id] > 0) userQtys[p.id]--; buildToggles(); markStale(); };
+          const val = document.createElement('div'); val.className = 'spinner-val'; val.textContent = userQtys[p.id];
+          const plus = document.createElement('button'); plus.className = 'spinner-btn'; plus.textContent = '+';
+          plus.onclick = () => { userQtys[p.id]++; buildToggles(); markStale(); };
+          spinner.appendChild(minus); spinner.appendChild(val); spinner.appendChild(plus);
+          rowDiv.appendChild(spinner);
+        }
+      } else {
+        const qd = document.createElement('div'); qd.className = 'qty-display'; qd.id = 'qty-' + p.id; qd.textContent = '—';
+        rowDiv.appendChild(qd);
+      }
+      row.appendChild(rowDiv);
+    });
+  });
+}
+
+function updateQtyDisplays(sol) {
+  PRODUCT_CATALOG.forEach(p => {
+    const el = document.getElementById('qty-' + p.id); if (!el) return;
+    const pi = sol ? sol.products.findIndex(sp => sp.id === p.id) : -1;
+    const qty = (pi >= 0 && sol) ? sol.counts[pi] : 0;
+    if (qty > 0) { el.textContent = qty+'×'; el.classList.add('has-qty'); const c = pipeColor(p); el.style.borderColor = c+'88'; el.style.color = c; }
+    else { el.textContent = '—'; el.classList.remove('has-qty'); el.style.borderColor = ''; el.style.color = ''; }
+  });
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = label;
+}
+
+function dist2(a, b) { return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2); }
+
+function makeInitial(items, boreR, strategy) {
+  const n = items.length;
+  const byLarge = [...items].sort((a,b) => b.r - a.r);
+  const bySmall = [...items].sort((a,b) => a.r - b.r);
+  switch (strategy % 8) {
+    case 0: return items.map((it,i) => { const a=i*2.399,f=Math.sqrt((i+0.5)/n),s=Math.max(0,boreR-it.r)*f*0.85; return {x:s*Math.cos(a),y:s*Math.sin(a),r:it.r,prodIdx:it.prodIdx}; });
+    case 1: return items.map((it,i) => { const a=i*2.399+Math.PI,s=Math.max(0,boreR-it.r)*0.9; return {x:s*Math.cos(a),y:s*Math.sin(a),r:it.r,prodIdx:it.prodIdx}; });
+    case 2: return byLarge.map((it,i) => { const a=i*(2*Math.PI/n),f=i/Math.max(n-1,1),s=Math.max(0,boreR-it.r)*f*0.85; return {x:s*Math.cos(a),y:s*Math.sin(a),r:it.r,prodIdx:it.prodIdx}; });
+    case 3: return bySmall.map((it,i) => { const a=i*(2*Math.PI/n),f=i/Math.max(n-1,1),s=Math.max(0,boreR-it.r)*f*0.85; return {x:s*Math.cos(a),y:s*Math.sin(a),r:it.r,prodIdx:it.prodIdx}; });
+    case 4: return items.map((it,i) => { const a=i*(2*Math.PI/n)-Math.PI/2,s=Math.max(0,boreR-it.r)*0.7; return {x:s*Math.cos(a),y:s*Math.sin(a),r:it.r,prodIdx:it.prodIdx}; });
+    case 5: {
+      const intl=[], half=Math.floor(n/2); let li=0,si=half;
+      for(let i=0;i<n;i++) intl.push(i%2===0&&li<half?byLarge[li++]:bySmall[Math.min(si++,n-1)]);
+      return intl.map((it,i) => { const a=i*(2*Math.PI/n)-Math.PI/2,s=Math.max(0,boreR-it.r)*0.75; return {x:s*Math.cos(a),y:s*Math.sin(a),r:it.r,prodIdx:it.prodIdx}; });
+    }
+    case 6: return items.map((it,i) => { const cols=Math.ceil(Math.sqrt(n)),row=Math.floor(i/cols),col=i%cols,sp=(boreR*1.6)/cols,x=(col-(cols-1)/2)*sp+(Math.random()-.5)*sp*.3,y=(row-(cols-1)/2)*sp+(Math.random()-.5)*sp*.3,sc=Math.min(1,(boreR-it.r)/Math.max(Math.sqrt(x*x+y*y),1)); return {x:x*sc,y:y*sc,r:it.r,prodIdx:it.prodIdx}; });
+    default: return items.map(it => { const a=Math.random()*2*Math.PI,rho=Math.random()*Math.max(0,boreR-it.r); return {x:rho*Math.cos(a),y:rho*Math.sin(a),r:it.r,prodIdx:it.prodIdx}; });
+  }
+}
+
+function physicsSettle(initCs, boreR, iters) {
+  const n = initCs.length;
+  const cs = initCs.map(c => ({...c}));
+  let dt = 0.18;
+  for (let it = 0; it < iters; it++) {
+    const fx = new Float64Array(n), fy = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      for (let j = i+1; j < n; j++) {
+        const dx=cs[j].x-cs[i].x, dy=cs[j].y-cs[i].y, d=Math.sqrt(dx*dx+dy*dy)||1e-9, minD=cs[i].r+cs[j].r;
+        if (d < minD+0.15) { const f=(minD+0.15-d)/d*0.65; fx[i]-=dx*f; fy[i]-=dy*f; fx[j]+=dx*f; fy[j]+=dy*f; }
+      }
+      const dc=Math.sqrt(cs[i].x**2+cs[i].y**2)||1e-9, maxD=boreR-cs[i].r;
+      if (dc > maxD) { const f2=(dc-maxD)/dc*1.3; fx[i]-=cs[i].x*f2; fy[i]-=cs[i].y*f2; }
+      fx[i] -= cs[i].x*0.003; fy[i] -= cs[i].y*0.003;
+    }
+    for (let i = 0; i < n; i++) { cs[i].x += fx[i]*dt; cs[i].y += fy[i]*dt; }
+    if (it % 500 === 499) dt *= 0.70;
+  }
+  // Jiggle phase
+  for (let jig = 0; jig < 3; jig++) {
+    for (let i = 0; i < n; i++) { cs[i].x += (Math.random()-.5)*cs[i].r*0.15; cs[i].y += (Math.random()-.5)*cs[i].r*0.15; }
+    let dt2 = 0.08;
+    for (let it = 0; it < 300; it++) {
+      const fx=new Float64Array(n), fy=new Float64Array(n);
+      for (let i=0;i<n;i++){
+        for(let j=i+1;j<n;j++){const dx=cs[j].x-cs[i].x,dy=cs[j].y-cs[i].y,d=Math.sqrt(dx*dx+dy*dy)||1e-9,minD=cs[i].r+cs[j].r;if(d<minD+0.15){const f=(minD+0.15-d)/d*0.65;fx[i]-=dx*f;fy[i]-=dy*f;fx[j]+=dx*f;fy[j]+=dy*f;}}
+        const dc=Math.sqrt(cs[i].x**2+cs[i].y**2)||1e-9,maxD=boreR-cs[i].r;if(dc>maxD){const f2=(dc-maxD)/dc*1.3;fx[i]-=cs[i].x*f2;fy[i]-=cs[i].y*f2;}
+        fx[i]-=cs[i].x*0.003;fy[i]-=cs[i].y*0.003;
+      }
+      for(let i=0;i<n;i++){cs[i].x+=fx[i]*dt2;cs[i].y+=fy[i]*dt2;}
+      if(it%100===99)dt2*=0.75;
+    }
+  }
+  let overlap = 0;
+  for (let i=0;i<n;i++){
+    const dc=Math.sqrt(cs[i].x**2+cs[i].y**2), ex=dc+cs[i].r-boreR; if(ex>0) overlap+=ex*2;
+    for(let j=i+1;j<n;j++){const gap=cs[i].r+cs[j].r-dist2(cs[i],cs[j]);if(gap>0)overlap+=gap;}
+  }
+  return {cs, overlap};
+}
+
+function physicsPlace(items, boreR, numStrategies, iters) {
+  if (!items.length) return [];
+  let best = null, bestOverlap = Infinity;
+  for (let s = 0; s < numStrategies; s++) {
+    const init = makeInitial(items, boreR, s);
+    const {cs, overlap} = physicsSettle(init, boreR, iters);
+    if (overlap < bestOverlap) { bestOverlap = overlap; best = cs.map(c=>({...c})); }
+    if (bestOverlap < 0.05) break;
+  }
+  return best;
+}
+
+function isFeasible(cs, boreR) {
+  for (let i=0;i<cs.length;i++){
+    if (Math.sqrt(cs[i].x**2+cs[i].y**2)+cs[i].r > boreR+0.15) return false;
+    for (let j=i+1;j<cs.length;j++) { if (dist2(cs[i],cs[j]) < cs[i].r+cs[j].r-0.15) return false; }
+  }
+  return true;
+}
+
+function maxCountForPipe(pOD_mm, boreR_mm) {
+  const circleArea = Math.PI*(pOD_mm/2)**2, boreArea = Math.PI*boreR_mm*boreR_mm;
+  return Math.min(Math.ceil(boreArea/circleArea*1.5), 80);
+}
+
+function placeExcluded(excludedItems, fittedPlaced, boreR) {
+  if (!excludedItems.length) return [];
+  const allItems = [...fittedPlaced, ...excludedItems.map((it,i)=>({r:it.r,prodIdx:it.prodIdx,fits:false,x:(boreR+it.r+4)*Math.cos(i*2.399),y:(boreR+it.r+4)*Math.sin(i*2.399)}))];
+  const nFit=fittedPlaced.length, n=allItems.length, cs=allItems.map(it=>({...it}));
+  let dt=0.15;
+  for(let it=0;it<2000;it++){
+    const fx=new Float64Array(n),fy=new Float64Array(n);
+    for(let i=0;i<n;i++){
+      for(let j=i+1;j<n;j++){const dx=cs[j].x-cs[i].x,dy=cs[j].y-cs[i].y,d=Math.sqrt(dx*dx+dy*dy)||1e-9,minD=cs[i].r+cs[j].r;if(d<minD+0.5){const f=(minD+0.5-d)/d*0.7;if(i>=nFit){fx[i]-=dx*f;fy[i]-=dy*f;}if(j>=nFit){fx[j]+=dx*f;fy[j]+=dy*f;}}}
+      if(i>=nFit){const dc=Math.sqrt(cs[i].x**2+cs[i].y**2)||1e-9,target=boreR+cs[i].r,pull=(dc-target)/dc*0.06;fx[i]-=cs[i].x*pull;fy[i]-=cs[i].y*pull;}
+    }
+    for(let i=nFit;i<n;i++){cs[i].x+=fx[i]*dt;cs[i].y+=fy[i]*dt;}
+    if(it%400===399)dt*=0.75;
+  }
+  return cs.slice(nFit).map((c,i)=>({...c,fits:false,prodIdx:excludedItems[i].prodIdx}));
+}
+
+function runSolver() {
+  const btn = document.getElementById('solve-btn');
+  btn.disabled = true; btn.textContent = 'Solving…';
+  clearStale();
+  document.getElementById('progress-wrap').style.display = 'block';
+  setProgress(0, 'Building combination list…');
+  setTimeout(() => {
+    const boreR=getBoreR(), reamR=getReamR(), cfg=INTENSITY_SETTINGS[intensityLevel-1];
+    if (solveMode === 'optimal') solveOptimal(boreR, reamR, cfg, btn);
+    else solveSelected(boreR, reamR, cfg, btn);
+  }, 40);
+}
+
+function finishSolve(btn) {
+  setProgress(100, 'Done');
+  setTimeout(() => { document.getElementById('progress-wrap').style.display='none'; btn.disabled=false; btn.textContent='Solve ↗'; hasSolved=true; }, 400);
+}
+
+function solveOptimal(boreR, reamR, cfg, btn) {
+  const products = PRODUCT_CATALOG.filter(p => activePipes.has(p.id));
+  if (!products.length) { document.getElementById('results-list').innerHTML='<div class="status-msg">Select at least one product</div>'; finishSolve(btn); return; }
+  const boreArea = Math.PI*boreR*boreR;
+  const maxCounts = products.map(p => maxCountForPipe(pipeOD_mm(p), boreR));
+  const combos = [];
+  function enumerate(pIdx, counts, cumArea) {
+    if (pIdx === products.length) { const total=counts.reduce((s,c)=>s+c,0); if(!total)return; if(cumArea>boreArea*1.01)return; combos.push({counts:[...counts],cumArea,total}); return; }
+    const pA=Math.PI*(pipeOD_mm(products[pIdx])/2)**2;
+    for(let n=0;n<=maxCounts[pIdx];n++){if(cumArea+n*pA>boreArea*1.01)break;enumerate(pIdx+1,[...counts,n],cumArea+n*pA);}
+  }
+  enumerate(0, [], 0);
+  combos.sort((a,b) => b.cumArea-a.cumArea);
+  setProgress(5, `Testing ${combos.length} combinations with ${cfg.strategies} strategies each…`);
+  const solutions=[]; let ci=0;
+  function processBatch(){
+    const end=Math.min(ci+8,combos.length);
+    for(;ci<end;ci++){
+      const combo=combos[ci], items=[];
+      combo.counts.forEach((cnt,pi)=>{const r=pipeOD_mm(products[pi])/2;for(let k=0;k<cnt;k++)items.push({r,prodIdx:pi});});
+      const placed=physicsPlace(items,boreR,cfg.strategies,cfg.iters);
+      if(placed&&isFeasible(placed,boreR)){solutions.push({counts:combo.counts,products,placed:placed.map(c=>({...c,fits:true})),fillRatio:combo.cumArea/boreArea,usedArea:combo.cumArea,total:combo.total,boreR,reamR});}
+    }
+    setProgress(5+Math.round((ci/combos.length)*90),`Tested ${ci} of ${combos.length} — ${solutions.length} valid so far…`);
+    if(ci<combos.length){setTimeout(processBatch,0);}
+    else{
+      solutions.sort((a,b)=>b.fillRatio-a.fillRatio);
+      currentSolutions=solutions.slice(0,10);
+      document.getElementById('excluded-wrap').style.display='none';
+      renderOptimalResults();
+      if(currentSolutions.length){showSolution(0);updateQtyDisplays(currentSolutions[0]);}
+      else document.getElementById('results-list').innerHTML='<div class="status-msg">No valid configurations found — try a larger reamer or different products</div>';
+      finishSolve(btn);
+    }
+  }
+  processBatch();
+}
+
+function renderOptimalResults() {
+  const list=document.getElementById('results-list');
+  if(!currentSolutions.length){list.innerHTML='<div class="status-msg">No valid configurations found</div>';return;}
+  list.innerHTML='';
+  currentSolutions.forEach((sol,i)=>{
+    const card=document.createElement('div');card.className='result-card'+(i===0?' active':'');
+    const combo=sol.counts.map((c,j)=>c>0?c+'× '+sol.products[j].label:'').filter(Boolean).join(' + ');
+    const pct=(sol.fillRatio*100).toFixed(1), voidMm=(Math.PI*sol.boreR*sol.boreR-sol.usedArea).toFixed(0);
+    card.innerHTML=`<div class="result-header"><span class="result-combo">${combo}</span><span class="result-pct">${pct}%</span></div><div class="result-detail">${sol.total} products · ${sol.usedArea.toFixed(0)} mm² used · ${voidMm} mm² void</div><div class="mini-bar-wrap"><div class="mini-bar-fill" style="width:${pct}%"></div></div>`;
+    card.onclick=()=>{document.querySelectorAll('.result-card').forEach(c=>c.classList.remove('active'));card.classList.add('active');showSolution(i);updateQtyDisplays(currentSolutions[i]);};
+    list.appendChild(card);
+  });
+}
+
+function solveSelected(boreR, reamR, cfg, btn) {
+  const products=PRODUCT_CATALOG.filter(p=>activePipes.has(p.id)&&(userQtys[p.id]||0)>0);
+  if(!products.length){document.getElementById('results-list').innerHTML='<div class="status-msg">Set quantities > 0 for at least one product</div>';finishSolve(btn);return;}
+  const boreArea=Math.PI*boreR*boreR;
+  const requested=[];
+  products.forEach((p,pi)=>{for(let k=0;k<(userQtys[p.id]||0);k++)requested.push({r:pipeOD_mm(p)/2,prodIdx:pi,prod:p});});
+  requested.sort((a,b)=>b.r-a.r);
+  setProgress(20,`Placing ${requested.length} conduits…`);
+  let fitItems=[...requested],excludedItems=[];
+  while(fitItems.length>0){
+    const placed=physicsPlace(fitItems.map(it=>({r:it.r,prodIdx:it.prodIdx})),boreR,cfg.strategies,cfg.iters);
+    if(placed&&isFeasible(placed,boreR)){fitItems=fitItems.map((it,i)=>({...it,x:placed[i].x,y:placed[i].y,fits:true}));break;}
+    excludedItems.unshift(fitItems.pop());
+    setProgress(20+Math.round((excludedItems.length/requested.length)*60),`Dropped ${excludedItems.length} — retrying…`);
+  }
+  setProgress(85,'Placing excluded items…');
+  const fittedPlaced=fitItems.map(it=>({x:it.x,y:it.y,r:it.r,prodIdx:it.prodIdx,fits:true}));
+  const excludedPlaced=placeExcluded(excludedItems.map(it=>({r:it.r,prodIdx:it.prodIdx,prod:it.prod})),fittedPlaced,boreR);
+  const usedArea=fitItems.reduce((s,it)=>s+Math.PI*it.r*it.r,0);
+  const counts=products.map((p,pi)=>fitItems.filter(it=>it.prodIdx===pi).length);
+  const sol={counts,products,placed:[...fittedPlaced,...excludedPlaced],fitCount:fitItems.length,excludedItems,fillRatio:usedArea/boreArea,usedArea,total:fitItems.length,boreR,reamR};
+  currentSolutions=[sol];
+  const exWrap=document.getElementById('excluded-wrap');
+  if(excludedItems.length>0){
+    exWrap.style.display='block';
+    const exGroups={};excludedItems.forEach(it=>{if(!exGroups[it.prod.id])exGroups[it.prod.id]={prod:it.prod,count:0};exGroups[it.prod.id].count++;});
+    document.getElementById('excluded-detail').textContent=excludedItems.length+' product'+(excludedItems.length>1?'s':'')+' excluded: '+Object.values(exGroups).map(g=>`${g.count}× ${g.prod.label}`).join(', ');
+  } else exWrap.style.display='none';
+  const pct=(sol.fillRatio*100).toFixed(1), combo=counts.map((c,j)=>c>0?c+'× '+products[j].label:'').filter(Boolean).join(' + ')||'Nothing fits';
+  document.getElementById('results-list').innerHTML=`<div class="result-card active"><div class="result-header"><span class="result-combo">${combo}</span><span class="result-pct">${pct}%</span></div><div class="result-detail">${sol.fitCount} of ${requested.length} requested fit · ${usedArea.toFixed(0)} mm² used</div><div class="mini-bar-wrap"><div class="mini-bar-fill" style="width:${pct}%"></div></div></div>`;
+  showSolution(0);finishSolve(btn);
+}
+
+function showSolution(idx) {
+  const sol=currentSolutions[idx];if(!sol)return;
+  const boreR=sol.boreR,reamR=sol.reamR,boreArea=Math.PI*boreR*boreR,reamArea=Math.PI*reamR*reamR;
+  const annularArea=reamArea-sol.usedArea;
+  const fittedPlaced=sol.placed.filter(c=>c.fits!==false);
+  const bundleR=fittedPlaced.length?Math.max(...fittedPlaced.map(c=>Math.sqrt(c.x**2+c.y**2)+c.r)):0;
+  const annularGap=(reamR-bundleR).toFixed(1);
+  const velFpm=annularArea>0?(150/(annularArea*0.00155)).toFixed(1):'—';
+  document.getElementById('bore-badge').textContent='Solved: eff. bore '+(boreR*2/25.4).toFixed(3)+'" ('+(boreR*2).toFixed(1)+' mm)  ·  reamer '+(reamR*2/25.4).toFixed(3)+'"';
+  document.getElementById('s-fill').textContent=(sol.fillRatio*100).toFixed(1)+'%';
+  document.getElementById('s-count').textContent=sol.total;
+  document.getElementById('s-used').textContent=sol.usedArea.toFixed(0)+' mm²';
+  document.getElementById('s-used-sub').textContent=(sol.usedArea*0.00155).toFixed(3)+' in²';
+  document.getElementById('s-void').textContent=(boreArea-sol.usedArea).toFixed(0)+' mm²';
+  document.getElementById('annular-table').innerHTML=`
+    <tr><td>Reamer OD (solved)</td><td>${(reamR*2/25.4).toFixed(3)}" (${(reamR*2).toFixed(1)} mm)</td></tr>
+    <tr><td>Effective bore (solved)</td><td>${(boreR*2/25.4).toFixed(3)}" (${(boreR*2).toFixed(1)} mm)</td></tr>
+    <tr><td>Bundle envelope OD</td><td>${(bundleR*2).toFixed(1)} mm (${(bundleR*2/25.4).toFixed(3)}")</td></tr>
+    <tr><td>Radial clearance to bore wall</td><td>${annularGap} mm (${(parseFloat(annularGap)/25.4).toFixed(3)}")</td></tr>
+    <tr><td>Annular area (reamer − bundle)</td><td>${annularArea.toFixed(0)} mm² (${(annularArea*0.00155).toFixed(3)} in²)</td></tr>
+    <tr><td>Annular area (bore − bundle)</td><td>${(boreArea-sol.usedArea).toFixed(0)} mm² (${((boreArea-sol.usedArea)*0.00155).toFixed(3)} in²)</td></tr>
+    <tr><td>Slurry return vel. @ 150 gal/min</td><td>${velFpm} ft/min</td></tr>`;
+  drawSolution(sol);buildLegend(sol);
+}
+
+function drawSolution(sol) {
+  const canvas=document.getElementById('packCanvas'),ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);drawnCircles=[];
+  const boreR=sol.boreR,reamR=sol.reamR,margin=22,scale=(W/2-margin)/reamR,cx=W/2,cy=H/2;
+  const pxReamR=reamR*scale,pxBoreR=boreR*scale;
+  ctx.fillStyle=isDark?'#0e100d':'#ddeef5';ctx.beginPath();ctx.arc(cx,cy,pxReamR,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=isDark?'#111310':'#e8f4f8';ctx.beginPath();ctx.arc(cx,cy,pxBoreR,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle=isDark?'#5a5040':'#8a7040';ctx.lineWidth=5;ctx.beginPath();ctx.arc(cx,cy,pxReamR,0,Math.PI*2);ctx.stroke();
+  ctx.setLineDash([4,4]);ctx.strokeStyle=isDark?'rgba(80,120,220,0.55)':'rgba(40,80,200,0.5)';ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(cx,cy,pxBoreR,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+  ctx.setLineDash([2,4]);ctx.strokeStyle=isDark?'rgba(160,155,130,0.18)':'rgba(80,70,40,0.15)';ctx.lineWidth=0.6;
+  ctx.beginPath();ctx.moveTo(cx-pxReamR-4,cy);ctx.lineTo(cx+pxReamR+4,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-pxReamR-4);ctx.lineTo(cx,cy+pxReamR+4);ctx.stroke();ctx.setLineDash([]);
+  if(!sol.placed||!sol.placed.length)return;
+  sol.placed.filter(c=>c.fits!==false).forEach(c=>drawPipe(c,true,sol,ctx,scale,cx,cy));
+  sol.placed.filter(c=>c.fits===false).forEach(c=>drawPipe(c,false,sol,ctx,scale,cx,cy));
+  ctx.fillStyle=isDark?'rgba(180,170,150,0.65)':'rgba(50,40,18,0.6)';ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  ctx.fillText('reamer ∅ '+(reamR*2/25.4).toFixed(3)+'"  ·  eff. bore ∅ '+(boreR*2/25.4).toFixed(3)+'"',cx,cy+pxReamR+16);
+}
+
+function drawPipe(c, fits, sol, ctx, scale, cx, cy) {
+  const prod=sol.products[c.prodIdx];if(!prod)return;
+  const color=pipeColor(prod),pxR=(pipeOD_mm(prod)/2)*scale,sx=cx+c.x*scale,sy=cy-c.y*scale;
+  if(fits){
+    ctx.beginPath();ctx.arc(sx,sy,pxR,0,Math.PI*2);ctx.fillStyle=color+(isDark?'44':'38');ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.stroke();
+    if(prod.sdr){const pxIdR=(pipeID_mm(prod)/2)*scale;ctx.beginPath();ctx.arc(sx,sy,pxIdR,0,Math.PI*2);ctx.fillStyle=color+(isDark?'18':'14');ctx.fill();ctx.strokeStyle=color+'99';ctx.lineWidth=0.9;ctx.stroke();}
+    else{ctx.beginPath();ctx.arc(sx,sy,pxR*0.72,0,Math.PI*2);ctx.fillStyle=color+(isDark?'22':'1A');ctx.fill();ctx.strokeStyle=color+'66';ctx.lineWidth=0.7;ctx.setLineDash([2,3]);ctx.stroke();ctx.setLineDash([]);}
+    if(pxR>13){ctx.fillStyle=isDark?'rgba(230,225,210,0.92)':'rgba(12,10,4,0.78)';const fs=Math.max(8,Math.min(11,Math.floor(pxR*0.38)));ctx.font=`500 ${fs}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(prod.family==='futurepath'?(prod.id==='fp1612'?'FP 16/12':'FP 18/14'):prod.label.split(' ')[0],sx,sy);}
+  } else {
+    ctx.beginPath();ctx.arc(sx,sy,pxR,0,Math.PI*2);ctx.fillStyle=isDark?'rgba(60,60,60,0.25)':'rgba(200,200,200,0.22)';ctx.fill();
+    ctx.setLineDash([3,3]);ctx.strokeStyle=isDark?'rgba(220,80,80,0.75)':'rgba(180,30,30,0.7)';ctx.lineWidth=1.5;ctx.stroke();ctx.setLineDash([]);
+    const xs=pxR*0.36;ctx.strokeStyle=isDark?'rgba(230,80,80,0.9)':'rgba(180,30,30,0.85)';ctx.lineWidth=1.8;
+    ctx.beginPath();ctx.moveTo(sx-xs,sy-xs);ctx.lineTo(sx+xs,sy+xs);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(sx+xs,sy-xs);ctx.lineTo(sx-xs,sy+xs);ctx.stroke();
+    if(pxR>12){ctx.fillStyle=isDark?'rgba(220,100,100,0.8)':'rgba(160,30,30,0.7)';const fs=Math.max(7,Math.min(9,Math.floor(pxR*0.28)));ctx.font=`${fs}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(prod.label.split(' ')[0],sx,sy+pxR*0.6);}
+  }
+  drawnCircles.push({sx,sy,pxR,fits,family:prod.family,label:prod.label,od_in:prod.od_in.toFixed(3)+'"',od_mm:pipeOD_mm(prod).toFixed(2)+' mm',id_in:prod.sdr?(prod.od_in*(1-2/prod.sdr)).toFixed(3)+'"':null,id_mm:prod.sdr?pipeID_mm(prod).toFixed(2)+' mm':null,wall_mm:prod.sdr?((pipeOD_mm(prod)-pipeID_mm(prod))/2).toFixed(2)+' mm':null,sdr:prod.sdr,microducts:prod.microducts||null});
+}
+
+function buildLegend(sol) {
+  const row=document.getElementById('legend-row');row.innerHTML='';
+  const seen=new Set();
+  [...sol.placed].sort((a,b)=>(a.fits===false?1:-1)-(b.fits===false?1:-1)).forEach(c=>{
+    const prod=sol.products[c.prodIdx];if(!prod||seen.has(prod.id+''+c.fits))return;
+    seen.add(prod.id+''+c.fits);const color=pipeColor(prod);
+    if(c.fits!==false)row.innerHTML+=`<span><span class="ld" style="background:${color}"></span>${prod.label}</span>`;
+    else row.innerHTML+=`<span><span class="ld" style="background:${isDark?'rgba(80,40,40,0.5)':'rgba(220,180,180,0.6)'};border:1px dashed ${isDark?'rgba(220,80,80,0.8)':'rgba(180,30,30,0.7)'}"></span>${prod.label} ✕</span>`;
+  });
+  row.innerHTML+=`<span><span class="ld" style="background:${isDark?'#4a4438':'#a09070'}"></span>reamer</span>`;
+  row.innerHTML+=`<span><span class="ld" style="border:1.5px dashed ${isDark?'#5080c0':'#2860c0'};background:transparent"></span>eff. bore</span>`;
+}
+
+const canvas=document.getElementById('packCanvas'),tooltip=document.getElementById('tooltip');
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect(),sx=canvas.width/rect.width;
+  const mx=(e.clientX-rect.left)*sx,my=(e.clientY-rect.top)*sx;
+  let hit=null;for(const c of drawnCircles){if(Math.sqrt((mx-c.sx)**2+(my-c.sy)**2)<=c.pxR){hit=c;break;}}
+  if(hit){
+    const statusTag=hit.fits===false?`<div class="tooltip-family" style="color:${isDark?'#f87171':'#c62828'}">✕ Did not fit in bore</div>`:(hit.family==='futurepath'?`<div class="tooltip-family" style="color:${isDark?'#A78BFA':'#5B21B6'}">Duraline FuturePath bundle</div>`:`<div class="tooltip-family">SDR ${hit.sdr} HDPE conduit</div>`);
+    const dims=hit.sdr?`<div>OD: ${hit.od_in} | ${hit.od_mm}</div><div>ID: ${hit.id_in} | ${hit.id_mm}</div><div>Wall: ${hit.wall_mm}</div>`:hit.microducts?`<div>Bundle OD: ${hit.od_in} | ${hit.od_mm}</div><div>Contents: ${hit.microducts}</div>`:`<div>OD: ${hit.od_in} | ${hit.od_mm}</div>`;
+    tooltip.innerHTML=`<div class="tooltip-name">${hit.label}</div>${statusTag}${dims}`;
+    const tipW=215,tipH=90;let tx=e.clientX-rect.left+10,ty=e.clientY-rect.top-tipH-6;
+    if(tx+tipW>rect.width)tx=e.clientX-rect.left-tipW-10;if(ty<0)ty=e.clientY-rect.top+14;
+    tooltip.style.left=tx+'px';tooltip.style.top=ty+'px';tooltip.classList.add('visible');canvas.style.cursor='pointer';
+  } else {tooltip.classList.remove('visible');canvas.style.cursor='crosshair';}
+});
+canvas.addEventListener('mouseleave',()=>tooltip.classList.remove('visible'));
+
+// Init
+buildGeoButtons();buildToggles();onReamerChange(12);onIntensityChange(3);
+</script>
+</body>
+</html>
