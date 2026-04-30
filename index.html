@@ -318,6 +318,10 @@ canvas{display:block;width:100%;cursor:crosshair}
     <div class="progress-label" id="progress-label">Initializing…</div>
   </div>
 </div>
+<div style="display:flex;gap:8px;margin-bottom:8px">
+  <button class="solve-btn" onclick="exportPNG()">Export PNG</button>
+  <button class="solve-btn" onclick="exportPDF()">Export PDF</button>
+</div>
 
 <div class="main">
   <div class="canvas-card">
@@ -704,7 +708,31 @@ function placeExcluded(excludedItems, fittedPlaced, boreR) {
   return cs.slice(nFit).map((c,i)=>({...c,fits:false,prodIdx:excludedItems[i].prodIdx}));
 }
 
+function estimateComputeLoad() {
+  const cfg = INTENSITY_SETTINGS[intensityLevel - 1];
+
+  const productCount = PRODUCT_CATALOG.filter(p => activePipes.has(p.id)).length;
+
+  let score = 0;
+  score += cfg.strategies * cfg.iters;
+  score += productCount * 200;
+
+  if (solveMode === 'optimal') score *= 1.5;
+
+  return score;
+}
+
 function runSolver() {
+  const load = estimateComputeLoad();
+
+  if (load > 20000) {
+    const ok = confirm(
+	  "This configuration may take a long time to compute (high intensity + large search space). Continue?"
+    );
+
+    if (!ok) return;
+  }
+  
   const btn = document.getElementById('solve-btn');
   btn.disabled = true; btn.textContent = 'Solving…';
   clearStale();
@@ -901,6 +929,41 @@ canvas.addEventListener('mouseleave',()=>tooltip.classList.remove('visible'));
 
 // Init
 buildGeoButtons();buildToggles();onReamerChange(12);onIntensityChange(3);
+
+
+
+function exportPNG() {
+  const target = document.querySelector('.main');
+
+  html2canvas(target).then(canvas => {
+    const link = document.createElement('a');
+    link.download = 'hdd-results.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+}
+
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const target = document.querySelector('.main');
+
+  html2canvas(target).then(canvas => {
+    const img = canvas.toDataURL('image/png');
+
+    const pdf = new jsPDF('p', 'mm', 'a4');
+
+    const width = 190;
+    const height = (canvas.height * width) / canvas.width;
+
+    pdf.addImage(img, 'PNG', 10, 10, width, height);
+    pdf.save('hdd-results.pdf');
+  });
+}
+
 </script>
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
 </body>
 </html>
