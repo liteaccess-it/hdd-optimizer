@@ -157,6 +157,12 @@ canvas{display:block;width:100%;cursor:crosshair}
 .modal-cancel-btn{padding:9px 14px;font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--color-border-secondary);border-radius:8px;background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s}
 .modal-cancel-btn:hover{color:var(--color-text-primary)}
 .modal-copied{font-size:11px;color:#3a9e5a;align-self:center;display:none}
+.modal-hint {
+  font-size: 0.75em;
+  color: #888;
+  margin-top: 6px;
+  text-align: center;
+}
 </style>
 </head>
 <body>
@@ -307,11 +313,18 @@ canvas{display:block;width:100%;cursor:crosshair}
       <label class="modal-label">Your name / contact (optional)</label>
       <input type="text" class="modal-input" id="bug-contact" placeholder="e.g. J. Smith — jsmith@company.com">
     </div>
-    <div class="modal-actions">
+    <!-- <div class="modal-actions">
       <button class="modal-copy-btn" onclick="copyBugReport()">Send email ↗</button>
       <button class="modal-cancel-btn" onclick="closeModal('bug')">Cancel</button>
       <span class="modal-copied" id="bug-copied">✓ Copied!</span>
-    </div>
+    </div> -->
+	<div class="modal-actions">
+	  <button class="modal-copy-btn" onclick="mailBugReport()">📧 Open in Mail App</button>
+	  <button class="modal-copy-btn" onclick="copyBugReport()">📋 Copy to Clipboard</button>
+	  <button class="modal-cancel-btn" onclick="closeModal('bug')">Cancel</button>
+	  <span class="modal-copied" id="bug-copied" style="display:none">✓ Copied!</span>
+	</div>
+	<div class="modal-hint">If mail app doesn't open, use Copy and paste into your email client.</div>
   </div>
 </div>
 
@@ -360,11 +373,19 @@ canvas{display:block;width:100%;cursor:crosshair}
       <label class="modal-label">Your name / contact (optional)</label>
       <input type="text" class="modal-input" id="pipe-contact" placeholder="e.g. J. Smith — jsmith@company.com">
     </div>
-    <div class="modal-actions">
+    <!--<div class="modal-actions">
       <button class="modal-copy-btn" onclick="copyPipeRequest()">Send email ↗</button>
       <button class="modal-cancel-btn" onclick="closeModal('pipe')">Cancel</button>
       <span class="modal-copied" id="pipe-copied">✓ Copied!</span>
-    </div>
+    </div>-->
+	
+	<div class="modal-actions">
+	  <button class="modal-copy-btn" onclick="mailPipeRequest()">📧 Open in Mail App</button>
+	  <button class="modal-copy-btn" onclick="copyPipeRequest()">📋 Copy to Clipboard</button>
+	  <button class="modal-cancel-btn" onclick="closeModal('pipe')">Cancel</button>
+	  <span class="modal-copied" id="pipe-copied" style="display:none">✓ Copied!</span>
+	</div>
+	<div class="modal-hint">If mail app doesn't open, use Copy and paste into your email client.</div>
   </div>
 </div>
 
@@ -500,7 +521,7 @@ function buildToggles() {
       btn.onclick = () => {
         if (activePipes.has(p.id)) { activePipes.delete(p.id); delete userQtys[p.id]; }
         else activePipes.add(p.id);
-        buildToggles(); markStale();
+        buildToggles(); hardReset(); markStale();
       };
       rowDiv.appendChild(btn);
       if (solveMode === 'selected') {
@@ -508,10 +529,10 @@ function buildToggles() {
           if (!userQtys[p.id]) userQtys[p.id] = 1;
           const spinner = document.createElement('div'); spinner.className = 'spinner';
           const minus = document.createElement('button'); minus.className = 'spinner-btn'; minus.textContent = '−';
-          minus.onclick = () => { if (userQtys[p.id] > 0) userQtys[p.id]--; buildToggles(); markStale(); };
+          minus.onclick = () => { if (userQtys[p.id] > 0) userQtys[p.id]--; buildToggles(); hardReset(); markStale(); };
           const val = document.createElement('div'); val.className = 'spinner-val'; val.textContent = userQtys[p.id];
           const plus = document.createElement('button'); plus.className = 'spinner-btn'; plus.textContent = '+';
-          plus.onclick = () => { userQtys[p.id]++; buildToggles(); markStale(); };
+          plus.onclick = () => { userQtys[p.id]++; buildToggles(); hardReset(); markStale(); };
           spinner.appendChild(minus); spinner.appendChild(val); spinner.appendChild(plus);
           rowDiv.appendChild(spinner);
         }
@@ -955,25 +976,55 @@ function showCopied(which) {
   setTimeout(() => { el.style.display = 'none'; }, 2200);
 }
 
+
+
 function copyBugReport() {
   const type    = document.getElementById('bug-type').value;
   const desc    = document.getElementById('bug-desc').value.trim();
   const steps   = document.getElementById('bug-steps').value.trim();
   const contact = document.getElementById('bug-contact').value.trim();
   if (!desc) { document.getElementById('bug-desc').focus(); return; }
+
   const lines = [
     '=== HDD Bore Packing Optimizer — ' + type + ' ===',
     'Date: ' + new Date().toLocaleDateString(),
-    '',
-    'DESCRIPTION',
-    desc,
+    '', 'DESCRIPTION', desc,
   ];
-  if (steps) { lines.push('', 'STEPS TO REPRODUCE', steps); }
+  if (steps)   { lines.push('', 'STEPS TO REPRODUCE', steps); }
   if (contact) { lines.push('', 'SUBMITTED BY', contact); }
   lines.push('', '--- App version: ' + (document.querySelector('.app-version') || {textContent:''}).textContent + ' ---');
-  const body = lines.join('\n');
+
+  const body    = lines.join('\n');
   const subject = 'HDD Optimizer — ' + type;
-  window.location.href = 'mailto:scott.jamieson@plenaryamericas.com?cc=bguleria@liteaccess.com&subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+
+  navigator.clipboard.writeText('To: scott.jamieson@plenaryamericas.com\nSubject: ' + subject + '\n\n' + body).then(() => {
+    const el = document.getElementById('bug-copied');
+    el.style.display = 'inline';
+    setTimeout(() => el.style.display = 'none', 2500);
+  });
+}
+
+function mailBugReport() {
+  const type    = document.getElementById('bug-type').value;
+  const desc    = document.getElementById('bug-desc').value.trim();
+  const steps   = document.getElementById('bug-steps').value.trim();
+  const contact = document.getElementById('bug-contact').value.trim();
+  if (!desc) { document.getElementById('bug-desc').focus(); return; }
+
+  const lines = [
+    '=== HDD Bore Packing Optimizer — ' + type + ' ===',
+    'Date: ' + new Date().toLocaleDateString(),
+    '', 'DESCRIPTION', desc,
+  ];
+  if (steps)   { lines.push('', 'STEPS TO REPRODUCE', steps); }
+  if (contact) { lines.push('', 'SUBMITTED BY', contact); }
+  lines.push('', '--- App version: ' + (document.querySelector('.app-version') || {textContent:''}).textContent + ' ---');
+
+  const body    = lines.join('\n');
+  const subject = 'HDD Optimizer — ' + type;
+  window.location.href = 'mailto:scott.jamieson@plenaryamericas.com?cc=bguleria@liteaccess.com'
+    + '&subject=' + encodeURIComponent(subject)
+    + '&body='    + encodeURIComponent(body);
 }
 
 function copyPipeRequest() {
@@ -986,26 +1037,64 @@ function copyPipeRequest() {
   const notes    = document.getElementById('pipe-notes').value.trim();
   const contact  = document.getElementById('pipe-contact').value.trim();
   if (!name && !od) { document.getElementById('pipe-name').focus(); return; }
+
   const lines = [
     '=== HDD Bore Packing Optimizer — Pipe / Conduit Inventory Request ===',
     'Date: ' + new Date().toLocaleDateString(),
-    '',
-    'PRODUCT DETAILS',
+    '', 'PRODUCT DETAILS',
     'Name / description : ' + (name || '(not specified)'),
-    'Outside diameter   : ' + (od || '(not specified)'),
-    'SDR rating         : ' + (sdr || '(not specified)'),
+    'Outside diameter   : ' + (od   || '(not specified)'),
+    'SDR rating         : ' + (sdr  || '(not specified)'),
     'Family / type      : ' + family,
-    'Manufacturer       : ' + (mfr || '(not specified)'),
+    'Manufacturer       : ' + (mfr  || '(not specified)'),
   ];
   if (internal) lines.push('Internal config    : ' + internal);
   if (notes)    lines.push('', 'ADDITIONAL NOTES', notes);
   if (contact)  lines.push('', 'SUBMITTED BY', contact);
   lines.push('', '--- App version: ' + (document.querySelector('.app-version') || {textContent:''}).textContent + ' ---');
-  const body = lines.join('\n');
+
+  const body    = lines.join('\n');
   const subject = 'HDD Optimizer — Pipe Inventory Request' + (name ? ': ' + name : '');
-  window.location.href = 'mailto:scott.jamieson@plenaryamericas.com?cc=bguleria@liteaccess.com&subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+
+  navigator.clipboard.writeText('To: scott.jamieson@plenaryamericas.com\nSubject: ' + subject + '\n\n' + body).then(() => {
+    const el = document.getElementById('pipe-copied');
+    el.style.display = 'inline';
+    setTimeout(() => el.style.display = 'none', 2500);
+  });
 }
 
+function mailPipeRequest() {
+  const name     = document.getElementById('pipe-name').value.trim();
+  const od       = document.getElementById('pipe-od').value.trim();
+  const sdr      = document.getElementById('pipe-sdr').value.trim();
+  const family   = document.getElementById('pipe-family').value;
+  const mfr      = document.getElementById('pipe-mfr').value.trim();
+  const internal = document.getElementById('pipe-internal').value.trim();
+  const notes    = document.getElementById('pipe-notes').value.trim();
+  const contact  = document.getElementById('pipe-contact').value.trim();
+  if (!name && !od) { document.getElementById('pipe-name').focus(); return; }
+
+  const lines = [
+    '=== HDD Bore Packing Optimizer — Pipe / Conduit Inventory Request ===',
+    'Date: ' + new Date().toLocaleDateString(),
+    '', 'PRODUCT DETAILS',
+    'Name / description : ' + (name || '(not specified)'),
+    'Outside diameter   : ' + (od   || '(not specified)'),
+    'SDR rating         : ' + (sdr  || '(not specified)'),
+    'Family / type      : ' + family,
+    'Manufacturer       : ' + (mfr  || '(not specified)'),
+  ];
+  if (internal) lines.push('Internal config    : ' + internal);
+  if (notes)    lines.push('', 'ADDITIONAL NOTES', notes);
+  if (contact)  lines.push('', 'SUBMITTED BY', contact);
+  lines.push('', '--- App version: ' + (document.querySelector('.app-version') || {textContent:''}).textContent + ' ---');
+
+  const body    = lines.join('\n');
+  const subject = 'HDD Optimizer — Pipe Inventory Request' + (name ? ': ' + name : '');
+  window.location.href = 'mailto:scott.jamieson@plenaryamericas.com?cc=bguleria@liteaccess.com'
+    + '&subject=' + encodeURIComponent(subject)
+    + '&body='    + encodeURIComponent(body);
+}
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -1013,3 +1102,4 @@ function copyPipeRequest() {
 
 </body>
 </html>
+
