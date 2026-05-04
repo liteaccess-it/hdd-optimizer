@@ -521,7 +521,7 @@ function buildToggles() {
       btn.onclick = () => {
         if (activePipes.has(p.id)) { activePipes.delete(p.id); delete userQtys[p.id]; }
         else activePipes.add(p.id);
-        buildToggles(); markStale();
+        buildToggles(); hardReset(); markStale();
       };
       rowDiv.appendChild(btn);
       if (solveMode === 'selected') {
@@ -529,10 +529,10 @@ function buildToggles() {
           if (!userQtys[p.id]) userQtys[p.id] = 1;
           const spinner = document.createElement('div'); spinner.className = 'spinner';
           const minus = document.createElement('button'); minus.className = 'spinner-btn'; minus.textContent = '−';
-          minus.onclick = () => { if (userQtys[p.id] > 0) userQtys[p.id]--; buildToggles(); markStale(); };
+          minus.onclick = () => { if (userQtys[p.id] > 0) userQtys[p.id]--; buildToggles(); hardReset(); markStale(); };
           const val = document.createElement('div'); val.className = 'spinner-val'; val.textContent = userQtys[p.id];
           const plus = document.createElement('button'); plus.className = 'spinner-btn'; plus.textContent = '+';
-          plus.onclick = () => { userQtys[p.id]++; buildToggles(); markStale(); };
+          plus.onclick = () => { userQtys[p.id]++; buildToggles(); hardReset(); markStale(); };
           spinner.appendChild(minus); spinner.appendChild(val); spinner.appendChild(plus);
           rowDiv.appendChild(spinner);
         }
