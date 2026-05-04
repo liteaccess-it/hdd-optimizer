@@ -4,108 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>HDD Bore Packing Optimizer</title>
-
-<!--
-================================================================================
-  HDD BORE PACKING OPTIMIZER
-  Version: 1.0.0
-  Built: 2026
-  Author: Generated with Claude (Anthropic) — claude.ai
-================================================================================
-
-  OVERVIEW
-  --------
-  A single-file web application for horizontal directional drilling (HDD)
-  crews to optimize conduit bundle configurations within a constrained bore
-  diameter. Accounts for soil geology, reamer sizing, and mixed product
-  inventories. No build step, no dependencies, no backend required.
-
-  DEPLOYMENT
-  ----------
-  Drop this single file on any static web host:
-    - Netlify:       drag-and-drop at netlify.com/drop
-    - GitHub Pages:  push to a repo, enable Pages in Settings
-    - Cloudflare Pages, Vercel, AWS S3+CloudFront, Azure Static Web Apps
-    - Internal web server: copy to any folder served over HTTP/HTTPS
-
-  Works in all modern browsers on phone, tablet, and desktop.
-  No install, no app store, no certificates required beyond HTTPS on the host.
-
-  UPDATING THE PRODUCT CATALOG
-  -----------------------------
-  The product catalog is defined in the PRODUCT_CATALOG array below (search
-  for "=== PRODUCT CATALOG ==="). Each entry is a plain JavaScript object.
-
-  To ADD a product, append a new object to the array following this template:
-
-    {
-      id:         'unique_id',        // Short unique string, no spaces (e.g. 'p2', 'fp1814')
-      family:     'hdpe',             // 'hdpe' or 'futurepath' — controls which section it appears in
-      label:      '2" SDR 11',        // Display name shown in UI and results
-      od_in:      2.375,              // Outside diameter in INCHES (use effective OD for bundles)
-      sdr:        11,                 // SDR rating — used to calculate ID. Set null for bundles.
-      colorL:     '#185FA5',          // Hex color, light mode
-      colorD:     '#85B7EB',          // Hex color, dark mode
-      microducts: '7× 18/14mm',      // OPTIONAL: shown in tooltip for FuturePath bundles only
-    }
-
-  SDR 11 HDPE PIPE DIMENSIONS (for reference when adding sizes):
-    Nominal   OD (in)    Wall (in)    ID (in)
-    1"        1.315      0.120        1.076
-    1.25"     1.660      0.151        1.358
-    1.5"      1.900      0.173        1.554
-    2"        2.375      0.216        1.943
-    3"        3.500      0.318        2.864
-    4"        4.500      0.409        3.682
-    6"        6.625      0.602        5.421
-
-  ID is always calculated as: ID = OD × (1 - 2/SDR)
-
-  DURALINE FUTUREPATH BUNDLE DIMENSIONS:
-    Product              Effective OD    Internal configuration
-    FP 7-way 16/12       2.030"          7× 16mm OD / 12mm ID microducts
-    FP 7-way 18/14       2.270"          7× 18mm OD / 14mm ID microducts
-  (Use effective bundle OD as od_in; set sdr: null for all bundles)
-
-  PRODUCT LIBRARY URLS (for reference when sourcing new products):
-    Duraline FuturePath:  https://www.duraline.com/products/futurepath/
-    ISCO Industries HDPE: https://www.isco-pipe.com/products/hdpe-pipe/
-    WL Plastics HDPE:     https://www.wlplastics.com/products/
-
-  GEOLOGY MULTIPLIERS
-  -------------------
-  Defined in the GEOLOGY array (search "=== GEOLOGY SETTINGS ===").
-  The multiplier converts reamer OD to effective bore constraint:
-    effective_bore = reamer_OD / multiplier
-  Adjust multipliers to match your crew's field experience.
-
-  SOLVER SETTINGS
-  ---------------
-  The INTENSITY_SETTINGS array controls the five solver intensity levels.
-  Each level specifies:
-    strategies:  number of distinct geometric initialization strategies
-    iters:       physics simulation iterations per strategy
-  Increase these values for more thorough solving at the cost of speed.
-
-  VERSION HISTORY
-  ---------------
-  1.0.0  Initial release. Features:
-         - Geology-aware bore constraint (7 soil types + custom multiplier)
-         - Reamer diameter slider (4"–36")
-         - Mixed-product circle packing optimizer
-         - Multi-strategy physics placement engine with jiggle phase
-         - Optimal mixed packing mode (solver chooses quantities)
-         - Optimal selected inventory mode (user specifies quantities)
-         - Excluded items shown outside bore with ✕ marker
-         - Annular space / slurry return velocity calculations
-         - Hover tooltips with full pipe dimensions
-         - Live progress indicator with Fast→Maximum intensity control
-         - Stale-result warning when inputs change after a solve
-         - Dark mode support
-
-================================================================================
--->
-
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--color-background-primary,#fff);color:var(--color-text-primary,#111)}
@@ -238,6 +136,27 @@ canvas{display:block;width:100%;cursor:crosshair}
 .results-list-label{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em}
 .status-msg{font-size:12px;color:var(--color-text-secondary);text-align:center;padding:12px 0}
 .stale-notice{font-size:11px;color:var(--color-text-warning);text-align:center;padding:4px 0;display:none;margin-bottom:8px}
+.feedback-footer{display:flex;gap:8px;margin-top:20px;padding-top:14px;border-top:0.5px solid var(--color-border-tertiary);flex-wrap:wrap}
+.feedback-btn{flex:1;min-width:160px;padding:8px 12px;font-size:11px;font-weight:500;cursor:pointer;border:0.5px solid var(--color-border-secondary);border-radius:8px;background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s;text-align:center;line-height:1.4}
+.feedback-btn:hover{background:var(--color-background-primary);color:var(--color-text-primary);border-color:var(--color-border-primary)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal-overlay.hidden{display:none}
+.modal-box{background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:14px;padding:20px 22px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.25)}
+.modal-title{font-size:14px;font-weight:600;color:var(--color-text-primary);margin-bottom:4px}
+.modal-sub{font-size:11px;color:var(--color-text-secondary);margin-bottom:16px;line-height:1.5}
+.modal-field{margin-bottom:12px}
+.modal-label{font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px}
+.modal-input{width:100%;padding:7px 10px;font-size:13px;border:0.5px solid var(--color-border-secondary);border-radius:8px;background:var(--color-background-secondary);color:var(--color-text-primary);font-family:inherit;resize:vertical}
+.modal-input:focus{outline:none;border-color:var(--color-border-info)}
+.modal-select{width:100%;padding:7px 10px;font-size:13px;border:0.5px solid var(--color-border-secondary);border-radius:8px;background:var(--color-background-secondary);color:var(--color-text-primary);font-family:inherit;cursor:pointer}
+.modal-row{display:flex;gap:10px}
+.modal-row .modal-field{flex:1}
+.modal-actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.modal-copy-btn{flex:1;padding:9px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;border-radius:8px;background:var(--color-background-info);color:var(--color-text-info);transition:all .15s}
+.modal-copy-btn:hover{opacity:.85}
+.modal-cancel-btn{padding:9px 14px;font-size:12px;font-weight:500;cursor:pointer;border:0.5px solid var(--color-border-secondary);border-radius:8px;background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s}
+.modal-cancel-btn:hover{color:var(--color-text-primary)}
+.modal-copied{font-size:11px;color:#3a9e5a;align-self:center;display:none}
 </style>
 </head>
 <body>
@@ -246,7 +165,7 @@ canvas{display:block;width:100%;cursor:crosshair}
 <div class="app-header">
   <div class="app-title">HDD Bore Packing Optimizer</div>
   <div class="app-subtitle">Conduit bundle configuration for horizontal directional drilling</div>
-  <div class="app-version">v1.0.0</div>
+  <div class="app-version">v1.0.2</div>
 </div>
 
 <div class="section-label">Step 1 — Soil conditions</div>
@@ -354,15 +273,102 @@ canvas{display:block;width:100%;cursor:crosshair}
   </div>
 </div>
 
+  <div class="feedback-footer">
+    <button class="feedback-btn" onclick="openModal('bug')">🐛 Report bug or request feature</button>
+    <button class="feedback-btn" onclick="openModal('pipe')">＋ Request pipe or conduit inventory</button>
+  </div>
+
 </div><!-- /.app -->
 
-<script>
-// =============================================================================
-// === GEOLOGY SETTINGS ========================================================
-// =============================================================================
-// Multiplier converts reamer OD to effective bore: bore = reamer / multiplier
-// Adjust values to match your crew's field experience and geotechnical reports.
+<!-- Bug / Feature modal -->
+<div class="modal-overlay hidden" id="modal-bug">
+  <div class="modal-box">
+    <div class="modal-title">Report a bug or request a feature</div>
+    <div class="modal-sub">Describe the issue or idea below. Copy the summary and send it to whoever manages this tool.</div>
+    <div class="modal-field">
+      <label class="modal-label">Type</label>
+      <select class="modal-select" id="bug-type">
+        <option value="Bug">🐛 Bug — something isn't working correctly</option>
+        <option value="Feature request">💡 Feature request — new capability or improvement</option>
+        <option value="UI / display issue">🖥 UI / display issue — layout, labels, or visuals</option>
+        <option value="Calculation concern">🔢 Calculation concern — results seem wrong</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Description</label>
+      <textarea class="modal-input" id="bug-desc" rows="4" placeholder="Describe the bug or feature in as much detail as possible…"></textarea>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Steps to reproduce (bugs only)</label>
+      <textarea class="modal-input" id="bug-steps" rows="3" placeholder="e.g. 1. Select Hard rock  2. Set reamer to 18&quot;  3. Switch to Selected mode  4. Press Solve…"></textarea>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Your name / contact (optional)</label>
+      <input type="text" class="modal-input" id="bug-contact" placeholder="e.g. J. Smith — jsmith@company.com">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-copy-btn" onclick="copyBugReport()">Send email ↗</button>
+      <button class="modal-cancel-btn" onclick="closeModal('bug')">Cancel</button>
+      <span class="modal-copied" id="bug-copied">✓ Copied!</span>
+    </div>
+  </div>
+</div>
 
+<!-- Pipe inventory request modal -->
+<div class="modal-overlay hidden" id="modal-pipe">
+  <div class="modal-box">
+    <div class="modal-title">Request additional pipe or conduit inventory</div>
+    <div class="modal-sub">Fill in what you know — partial info is fine. Copy the summary and send it to whoever manages this tool.</div>
+    <div class="modal-field">
+      <label class="modal-label">Product name / description</label>
+      <input type="text" class="modal-input" id="pipe-name" placeholder="e.g. 2.5&quot; SDR 11 HDPE, Duraline FP 10-way bundle…">
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <label class="modal-label">Outside diameter (OD)</label>
+        <input type="text" class="modal-input" id="pipe-od" placeholder="e.g. 2.875 in or 73.0 mm">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">SDR rating</label>
+        <input type="text" class="modal-input" id="pipe-sdr" placeholder="e.g. 11, 13.5, or N/A">
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <label class="modal-label">Product family</label>
+        <select class="modal-select" id="pipe-family">
+          <option value="SDR HDPE conduit">SDR HDPE conduit</option>
+          <option value="FuturePath / microduct bundle">FuturePath / microduct bundle</option>
+          <option value="Other conduit type">Other conduit type</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Manufacturer / source</label>
+        <input type="text" class="modal-input" id="pipe-mfr" placeholder="e.g. WL Plastics, Duraline…">
+      </div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Internal configuration (bundles only)</label>
+      <input type="text" class="modal-input" id="pipe-internal" placeholder="e.g. 10× 16/12mm microducts">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Additional notes</label>
+      <textarea class="modal-input" id="pipe-notes" rows="2" placeholder="Any other specs, part numbers, or context…"></textarea>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Your name / contact (optional)</label>
+      <input type="text" class="modal-input" id="pipe-contact" placeholder="e.g. J. Smith — jsmith@company.com">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-copy-btn" onclick="copyPipeRequest()">Send email ↗</button>
+      <button class="modal-cancel-btn" onclick="closeModal('pipe')">Cancel</button>
+      <span class="modal-copied" id="pipe-copied">✓ Copied!</span>
+    </div>
+  </div>
+</div>
+
+<script>
 const GEOLOGY = [
   { id:'rock',      name:'Hard rock',          mult:1.50, note:'Stable walls',        colorL:'#6B5E3E', colorD:'#C4AE78' },
   { id:'cobble',    name:'Cobbles/boulders',   mult:1.75, note:'Irregular profile',   colorL:'#7A4A1E', colorD:'#D4956A' },
@@ -373,88 +379,17 @@ const GEOLOGY = [
   { id:'peat',      name:'Soft organic/peat',  mult:2.00, note:'Max clearance',       colorL:'#5A3A7A', colorD:'#A882D4' },
 ];
 
-// =============================================================================
-// === PRODUCT CATALOG =========================================================
-// =============================================================================
-// Add, remove, or modify products here to update the inventory pick list.
-// See the developer notes at the top of this file for the full field reference.
-//
-// ADDING A PRODUCT — copy and modify this template:
-//
-//   {
-//     id:         'my_product',    // unique string, no spaces
-//     family:     'hdpe',          // 'hdpe' or 'futurepath'
-//     label:      '2" SDR 11',     // display name
-//     od_in:      2.375,           // outside diameter in inches
-//     sdr:        11,              // SDR rating (null for bundles)
-//     colorL:     '#185FA5',       // light mode color
-//     colorD:     '#85B7EB',       // dark mode color
-//     microducts: '7× 18/14mm',   // optional, FuturePath bundles only
-//   },
-
 const PRODUCT_CATALOG = [
-
-  // ── SDR 11 HDPE Conduit ───────────────────────────────────────────────────
-  {
-    id:'p1',    family:'hdpe',
-    label:'1" SDR 11',       od_in:1.315, sdr:11,
-    colorL:'#4a7a10',        colorD:'#97C459',
-  },
-  {
-    id:'p1q',   family:'hdpe',
-    label:'1.25" SDR 11',    od_in:1.660, sdr:11,
-    colorL:'#1D9E75',        colorD:'#5DCAA5',
-  },
-  {
-    id:'p1h',   family:'hdpe',
-    label:'1.5" SDR 11',     od_in:1.900, sdr:11,
-    colorL:'#0e7a8a',        colorD:'#4DC8DC',
-  },
-  {
-    id:'p2',    family:'hdpe',
-    label:'2" SDR 11',        od_in:2.375, sdr:11,
-    colorL:'#185FA5',         colorD:'#85B7EB',
-  },
-  {
-    id:'p3',    family:'hdpe',
-    label:'3" SDR 11',        od_in:3.500, sdr:11,
-    colorL:'#BA7517',         colorD:'#EF9F27',
-  },
-  {
-    id:'p4',    family:'hdpe',
-    label:'4" SDR 11',        od_in:4.500, sdr:11,
-    colorL:'#993C1D',         colorD:'#F0997B',
-  },
-  {
-    id:'p6',    family:'hdpe',
-    label:'6" SDR 11',        od_in:6.625, sdr:11,
-    colorL:'#7a1060',         colorD:'#D870C0',
-  },
-
-  // ── Duraline FuturePath Microduct Bundles ─────────────────────────────────
-  // Effective OD is the sheathed bundle outside diameter.
-  // Source: https://www.duraline.com/products/futurepath/
-  {
-    id:'fp1612', family:'futurepath',
-    label:'FP 7-way 16/12',  od_in:2.030, sdr:null,
-    colorL:'#5B21B6',         colorD:'#A78BFA',
-    microducts:'7× 16/12mm microducts',
-  },
-  {
-    id:'fp1814', family:'futurepath',
-    label:'FP 7-way 18/14',  od_in:2.270, sdr:null,
-    colorL:'#7C1FAD',         colorD:'#D09EF5',
-    microducts:'7× 18/14mm microducts',
-  },
-
+  { id:'p1',    family:'hdpe',       label:'1" SDR 11',      od_in:1.315, sdr:11,   colorL:'#4a7a10', colorD:'#97C459' },
+  { id:'p1q',   family:'hdpe',       label:'1.25" SDR 11',   od_in:1.660, sdr:11,   colorL:'#1D9E75', colorD:'#5DCAA5' },
+  { id:'p1h',   family:'hdpe',       label:'1.5" SDR 11',    od_in:1.900, sdr:11,   colorL:'#0e7a8a', colorD:'#4DC8DC' },
+  { id:'p2',    family:'hdpe',       label:'2" SDR 11',      od_in:2.375, sdr:11,   colorL:'#185FA5', colorD:'#85B7EB' },
+  { id:'p3',    family:'hdpe',       label:'3" SDR 11',      od_in:3.500, sdr:11,   colorL:'#BA7517', colorD:'#EF9F27' },
+  { id:'p4',    family:'hdpe',       label:'4" SDR 11',      od_in:4.500, sdr:11,   colorL:'#993C1D', colorD:'#F0997B' },
+  { id:'p6',    family:'hdpe',       label:'6" SDR 11',      od_in:6.625, sdr:11,   colorL:'#7a1060', colorD:'#D870C0' },
+  { id:'fp1612',family:'futurepath', label:'FP 7-way 16/12', od_in:2.030, sdr:null, colorL:'#5B21B6', colorD:'#A78BFA', microducts:'7× 16/12mm microducts' },
+  { id:'fp1814',family:'futurepath', label:'FP 7-way 18/14', od_in:2.270, sdr:null, colorL:'#7C1FAD', colorD:'#D09EF5', microducts:'7× 18/14mm microducts' },
 ];
-
-// =============================================================================
-// === SOLVER INTENSITY SETTINGS ===============================================
-// =============================================================================
-// Five levels from Fast (index 0) to Maximum (index 4).
-// strategies: number of distinct geometric initialization strategies per combo
-// iters:      physics simulation iterations per strategy
 
 const INTENSITY_SETTINGS = [
   { label:'Fast',     desc:'4 strategies · 800 iters',   strategies:4,  iters:800  },
@@ -463,10 +398,6 @@ const INTENSITY_SETTINGS = [
   { label:'Thorough', desc:'12 strategies · 2000 iters', strategies:12, iters:2000 },
   { label:'Maximum',  desc:'16 strategies · 3000 iters', strategies:16, iters:3000 },
 ];
-
-// =============================================================================
-// === APPLICATION CODE — no changes needed below this line ====================
-// =============================================================================
 
 const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
 
@@ -486,6 +417,8 @@ let currentSolutions = [];
 let drawnCircles     = [];
 let hasSolved        = false;
 
+let _solveGen = 0; // increments each run; closures check their own copy
+
 function activeMult()      { return customMult !== null ? customMult : selectedGeo.mult; }
 function effectiveBoreIn() { return reamIn / activeMult(); }
 function getBoreR()        { return effectiveBoreIn() * 25.4 / 2; }
@@ -497,10 +430,13 @@ function setMode(m) {
   solveMode = m;
   document.getElementById('mode-opt').classList.toggle('active', m === 'optimal');
   document.getElementById('mode-sel').classList.toggle('active', m === 'selected');
-  document.getElementById('results-label').textContent = m === 'optimal' ? 'Top configurations' : 'Best fit result';
+  document.getElementById('results-label').textContent =
+    m === 'optimal' ? 'Top configurations' : 'Best fit result';
+
   buildToggles();
-  document.getElementById('results-list').innerHTML = '<div class="status-msg">Press Solve to run</div>';
   document.getElementById('excluded-wrap').style.display = 'none';
+
+  hardReset();                             // single call replaces all the duplicated clears
   markStale();
 }
 
@@ -521,7 +457,7 @@ function buildGeoButtons() {
     btn.innerHTML = `<span class="geo-name">${g.name}</span><span class="geo-mult">${g.mult}× · ${g.note}</span>`;
     if (isActive) { const c = geoColor(g); btn.style.background = c+'33'; btn.style.color = c; btn.style.borderColor = c+'99'; }
     else { btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
-    btn.onclick = () => { selectedGeo = g; customMult = null; document.getElementById('custom-mult').value = ''; buildGeoButtons(); updateDerived(); markStale(); };
+    btn.onclick = () => { selectedGeo = g; customMult = null; document.getElementById('custom-mult').value = ''; buildGeoButtons(); updateDerived(); hardReset(); markStale(); };
     grid.appendChild(btn);
   });
 }
@@ -529,14 +465,14 @@ function buildGeoButtons() {
 function onCustomMult(v) {
   const n = parseFloat(v);
   customMult = (v === '' || isNaN(n) || n < 1) ? null : Math.max(1.0, Math.min(3.0, n));
-  buildGeoButtons(); updateDerived(); markStale();
+  buildGeoButtons(); updateDerived(); hardReset(); markStale();
 }
 
 function onReamerChange(v) {
   reamIn = parseFloat(v);
   document.getElementById('reamer-display').textContent   = reamIn.toFixed(3) + '"';
   document.getElementById('reamer-mm-label').textContent  = (reamIn * 25.4).toFixed(2) + ' mm';
-  updateDerived(); markStale();
+  updateDerived(); hardReset(); markStale();
 }
 
 function updateDerived() {
@@ -643,7 +579,6 @@ function physicsSettle(initCs, boreR, iters) {
     for (let i = 0; i < n; i++) { cs[i].x += fx[i]*dt; cs[i].y += fy[i]*dt; }
     if (it % 500 === 499) dt *= 0.70;
   }
-  // Jiggle phase
   for (let jig = 0; jig < 3; jig++) {
     for (let i = 0; i < n; i++) { cs[i].x += (Math.random()-.5)*cs[i].r*0.15; cs[i].y += (Math.random()-.5)*cs[i].r*0.15; }
     let dt2 = 0.08;
@@ -675,7 +610,7 @@ function physicsPlace(items, boreR, numStrategies, iters) {
     if (overlap < bestOverlap) { bestOverlap = overlap; best = cs.map(c=>({...c})); }
     if (bestOverlap < 0.05) break;
   }
-  return best;
+  return best || [];
 }
 
 function isFeasible(cs, boreR) {
@@ -710,38 +645,74 @@ function placeExcluded(excludedItems, fittedPlaced, boreR) {
 
 function estimateComputeLoad() {
   const cfg = INTENSITY_SETTINGS[intensityLevel - 1];
-
   const productCount = PRODUCT_CATALOG.filter(p => activePipes.has(p.id)).length;
-
   let score = 0;
   score += cfg.strategies * cfg.iters;
   score += productCount * 200;
-
   if (solveMode === 'optimal') score *= 1.5;
-
   return score;
 }
 
+
+// ── Centralized reset (replaces the duplicated clear blocks) ──────────────
+function hardReset() {
+  _solveGen++;                  // invalidates any in-flight setTimeout callback
+  currentSolutions = [];
+  drawnCircles     = [];
+  hasSolved        = false;
+
+  const canvas = document.getElementById('packCanvas');
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+  document.getElementById('legend-row').innerHTML    = '';
+  document.getElementById('results-list').innerHTML  =
+    '<div class="status-msg">Press Solve to run</div>';
+  document.getElementById('s-fill').textContent      = '—';
+  document.getElementById('s-count').textContent     = '—';
+  document.getElementById('s-used').textContent      = '—';
+  document.getElementById('s-used-sub').textContent  = '—';
+  document.getElementById('s-void').textContent      = '—';
+  document.getElementById('annular-table').innerHTML =
+    '<tr><td colspan="2" style="font-style:italic">Run solver to calculate</td></tr>';
+  document.getElementById('bore-badge').textContent  = '—';
+  document.getElementById('progress-wrap').style.display = 'none';
+}
+
+
 function runSolver() {
   const load = estimateComputeLoad();
-
+  console.log('Compute load estimate:', estimateComputeLoad());
   if (load > 20000) {
     const ok = confirm(
-	  "This configuration may take a long time to compute (high intensity + large search space). Continue?"
+      "This configuration may take a long time to compute " +
+      "(high intensity + large search space). Continue?"
     );
-
     if (!ok) return;
   }
-  
+
+  hardReset();                              // wipes ALL stale state first
+
   const btn = document.getElementById('solve-btn');
-  btn.disabled = true; btn.textContent = 'Solving…';
-  clearStale();
+  btn.disabled = true;
+  btn.textContent = 'Solving…';
+
   document.getElementById('progress-wrap').style.display = 'block';
   setProgress(0, 'Building combination list…');
+  document.getElementById('bore-badge').textContent  = 'Solving…';
+  document.getElementById('annular-table').innerHTML =
+    '<tr><td colspan="2" style="font-style:italic">Solving…</td></tr>';
+
+  const gen = _solveGen;                   // capture generation for this run
+
   setTimeout(() => {
-    const boreR=getBoreR(), reamR=getReamR(), cfg=INTENSITY_SETTINGS[intensityLevel-1];
+    if (gen !== _solveGen) return;         // a newer solve or reset fired — abort
+
+    const boreR = getBoreR();
+    const reamR = getReamR();
+    const cfg   = INTENSITY_SETTINGS[intensityLevel - 1];
+
     if (solveMode === 'optimal') solveOptimal(boreR, reamR, cfg, btn);
-    else solveSelected(boreR, reamR, cfg, btn);
+    else                         solveSelected(boreR, reamR, cfg, btn);
   }, 40);
 }
 
@@ -781,7 +752,10 @@ function solveOptimal(boreR, reamR, cfg, btn) {
       document.getElementById('excluded-wrap').style.display='none';
       renderOptimalResults();
       if(currentSolutions.length){showSolution(0);updateQtyDisplays(currentSolutions[0]);}
-      else document.getElementById('results-list').innerHTML='<div class="status-msg">No valid configurations found — try a larger reamer or different products</div>';
+      else {
+        document.getElementById('bore-badge').textContent='No valid configurations found';
+        document.getElementById('results-list').innerHTML='<div class="status-msg">No valid configurations found — try a larger reamer or different products</div>';
+      }
       finishSolve(btn);
     }
   }
@@ -812,14 +786,15 @@ function solveSelected(boreR, reamR, cfg, btn) {
   setProgress(20,`Placing ${requested.length} conduits…`);
   let fitItems=[...requested],excludedItems=[];
   while(fitItems.length>0){
-    const placed=physicsPlace(fitItems.map(it=>({r:it.r,prodIdx:it.prodIdx})),boreR,cfg.strategies,cfg.iters);
+    const physItems=fitItems.map(it=>({r:it.r,prodIdx:it.prodIdx}));
+    const placed=physicsPlace(physItems,boreR,cfg.strategies,cfg.iters);
     if(placed&&isFeasible(placed,boreR)){fitItems=fitItems.map((it,i)=>({...it,x:placed[i].x,y:placed[i].y,fits:true}));break;}
     excludedItems.unshift(fitItems.pop());
     setProgress(20+Math.round((excludedItems.length/requested.length)*60),`Dropped ${excludedItems.length} — retrying…`);
   }
   setProgress(85,'Placing excluded items…');
   const fittedPlaced=fitItems.map(it=>({x:it.x,y:it.y,r:it.r,prodIdx:it.prodIdx,fits:true}));
-  const excludedPlaced=placeExcluded(excludedItems.map(it=>({r:it.r,prodIdx:it.prodIdx,prod:it.prod})),fittedPlaced,boreR);
+  const excludedPlaced=excludedItems.length>0?placeExcluded(excludedItems.map(it=>({r:it.r,prodIdx:it.prodIdx,prod:it.prod})),fittedPlaced,boreR):[];
   const usedArea=fitItems.reduce((s,it)=>s+Math.PI*it.r*it.r,0);
   const counts=products.map((p,pi)=>fitItems.filter(it=>it.prodIdx===pi).length);
   const sol={counts,products,placed:[...fittedPlaced,...excludedPlaced],fitCount:fitItems.length,excludedItems,fillRatio:usedArea/boreArea,usedArea,total:fitItems.length,boreR,reamR};
@@ -927,18 +902,14 @@ canvas.addEventListener('mousemove',e=>{
 });
 canvas.addEventListener('mouseleave',()=>tooltip.classList.remove('visible'));
 
-// Init
 buildGeoButtons();buildToggles();onReamerChange(12);onIntensityChange(3);
-
-
 
 function exportPNG() {
   const target = document.querySelector('.main');
-
-  html2canvas(target).then(canvas => {
+  html2canvas(target).then(c => {
     const link = document.createElement('a');
     link.download = 'hdd-results.png';
-    link.href = canvas.toDataURL('image/png');
+    link.href = c.toDataURL('image/png');
     link.click();
   });
 }
@@ -946,18 +917,93 @@ function exportPNG() {
 function exportPDF() {
   const { jsPDF } = window.jspdf;
   const target = document.querySelector('.main');
-
-  html2canvas(target).then(canvas => {
-    const img = canvas.toDataURL('image/png');
-
+  html2canvas(target).then(c => {
+    const img = c.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
-
     const width = 190;
-    const height = (canvas.height * width) / canvas.width;
-
+    const height = (c.height * width) / c.width;
     pdf.addImage(img, 'PNG', 10, 10, width, height);
     pdf.save('hdd-results.pdf');
   });
+}
+function openModal(which) {
+  document.getElementById('modal-' + which).classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(which) {
+  document.getElementById('modal-' + which).classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+// Close modal when clicking outside the box
+document.addEventListener('click', e => {
+  ['bug','pipe'].forEach(which => {
+    const overlay = document.getElementById('modal-' + which);
+    if (!overlay.classList.contains('hidden') && e.target === overlay) closeModal(which);
+  });
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') ['bug','pipe'].forEach(closeModal);
+});
+
+function showCopied(which) {
+  const el = document.getElementById(which + '-copied');
+  el.style.display = 'inline';
+  setTimeout(() => { el.style.display = 'none'; }, 2200);
+}
+
+function copyBugReport() {
+  const type    = document.getElementById('bug-type').value;
+  const desc    = document.getElementById('bug-desc').value.trim();
+  const steps   = document.getElementById('bug-steps').value.trim();
+  const contact = document.getElementById('bug-contact').value.trim();
+  if (!desc) { document.getElementById('bug-desc').focus(); return; }
+  const lines = [
+    '=== HDD Bore Packing Optimizer — ' + type + ' ===',
+    'Date: ' + new Date().toLocaleDateString(),
+    '',
+    'DESCRIPTION',
+    desc,
+  ];
+  if (steps) { lines.push('', 'STEPS TO REPRODUCE', steps); }
+  if (contact) { lines.push('', 'SUBMITTED BY', contact); }
+  lines.push('', '--- App version: ' + (document.querySelector('.app-version') || {textContent:''}).textContent + ' ---');
+  const body = lines.join('\n');
+  const subject = 'HDD Optimizer — ' + type;
+  window.location.href = 'mailto:scott.jamieson@plenaryamericas.com?cc=bguleria@liteaccess.com&subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+}
+
+function copyPipeRequest() {
+  const name     = document.getElementById('pipe-name').value.trim();
+  const od       = document.getElementById('pipe-od').value.trim();
+  const sdr      = document.getElementById('pipe-sdr').value.trim();
+  const family   = document.getElementById('pipe-family').value;
+  const mfr      = document.getElementById('pipe-mfr').value.trim();
+  const internal = document.getElementById('pipe-internal').value.trim();
+  const notes    = document.getElementById('pipe-notes').value.trim();
+  const contact  = document.getElementById('pipe-contact').value.trim();
+  if (!name && !od) { document.getElementById('pipe-name').focus(); return; }
+  const lines = [
+    '=== HDD Bore Packing Optimizer — Pipe / Conduit Inventory Request ===',
+    'Date: ' + new Date().toLocaleDateString(),
+    '',
+    'PRODUCT DETAILS',
+    'Name / description : ' + (name || '(not specified)'),
+    'Outside diameter   : ' + (od || '(not specified)'),
+    'SDR rating         : ' + (sdr || '(not specified)'),
+    'Family / type      : ' + family,
+    'Manufacturer       : ' + (mfr || '(not specified)'),
+  ];
+  if (internal) lines.push('Internal config    : ' + internal);
+  if (notes)    lines.push('', 'ADDITIONAL NOTES', notes);
+  if (contact)  lines.push('', 'SUBMITTED BY', contact);
+  lines.push('', '--- App version: ' + (document.querySelector('.app-version') || {textContent:''}).textContent + ' ---');
+  const body = lines.join('\n');
+  const subject = 'HDD Optimizer — Pipe Inventory Request' + (name ? ': ' + name : '');
+  window.location.href = 'mailto:scott.jamieson@plenaryamericas.com?cc=bguleria@liteaccess.com&subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
 }
 
 </script>
