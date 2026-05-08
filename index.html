@@ -409,7 +409,13 @@ const PRODUCT_CATALOG = [
   { id:'p4',    family:'hdpe',       label:'4" SDR 11',      od_in:4.500, sdr:11,   colorL:'#993C1D', colorD:'#F0997B' },
   { id:'p6',    family:'hdpe',       label:'6" SDR 11',      od_in:6.625, sdr:11,   colorL:'#7a1060', colorD:'#D870C0' },
   { id:'fp1612',family:'futurepath', label:'FP 7-way 16/12', od_in:2.030, sdr:null, colorL:'#5B21B6', colorD:'#A78BFA', microducts:'7× 16/12mm microducts' },
-  { id:'fp1814',family:'futurepath', label:'FP 7-way 18/14', od_in:2.270, sdr:null, colorL:'#7C1FAD', colorD:'#D09EF5', microducts:'7× 18/14mm microducts' },
+  // { id:'fp1814',family:'futurepath', label:'FP 7-way 18/14', od_in:2.270, sdr:null, colorL:'#7C1FAD', colorD:'#D09EF5', microducts:'7× 18/14mm microducts' },
+  // --- NEW RECORDS TO ADD ---
+  { id:'fp1613',family:'futurepath', label:'FP 7-way 16/13',od_in: 2.030, sdr:null, colorL:'#4C1D95', colorD:'#8B5CF6', microducts:'7× 16/13mm microducts' },
+  { id:'fp1613os',family:'futurepath',label:'FP 7-way 16/13 (Thicker OS)',od_in:2.030, sdr:null, colorL: '#5B21B6', colorD: '#7C3AED', microducts: '7× 16/13mm microducts (Thicker OS)' },
+  { id: 'fp1814', family: 'futurepath',  label: 'FP 7-way 18/14',  od_in: 2.270, sdr: null, colorL: '#7C1FAD', colorD: '#D09EF5', microducts: '7× 18/14mm microducts' },
+  { id: 'fp1814os', family: 'futurepath', label: 'FP 7-way 18/14 (Thicker OS)', od_in: 2.270, sdr: null, colorL: '#86198F', colorD: '#E879F9', microducts: '7× 18/14mm microducts (Thicker OS)' },
+  { id: 'fp2216', family: 'futurepath', label: 'FP 7-way 22/16', od_in: 2.740, sdr: null, colorL: '#9D174D', colorD: '#F472B6', microducts: '7× 22/16mm microducts' },
 ];
 
 const INTENSITY_SETTINGS = [
@@ -882,7 +888,19 @@ function drawPipe(c, fits, sol, ctx, scale, cx, cy) {
     ctx.beginPath();ctx.arc(sx,sy,pxR,0,Math.PI*2);ctx.fillStyle=color+(isDark?'44':'38');ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.stroke();
     if(prod.sdr){const pxIdR=(pipeID_mm(prod)/2)*scale;ctx.beginPath();ctx.arc(sx,sy,pxIdR,0,Math.PI*2);ctx.fillStyle=color+(isDark?'18':'14');ctx.fill();ctx.strokeStyle=color+'99';ctx.lineWidth=0.9;ctx.stroke();}
     else{ctx.beginPath();ctx.arc(sx,sy,pxR*0.72,0,Math.PI*2);ctx.fillStyle=color+(isDark?'22':'1A');ctx.fill();ctx.strokeStyle=color+'66';ctx.lineWidth=0.7;ctx.setLineDash([2,3]);ctx.stroke();ctx.setLineDash([]);}
-    if(pxR>13){ctx.fillStyle=isDark?'rgba(230,225,210,0.92)':'rgba(12,10,4,0.78)';const fs=Math.max(8,Math.min(11,Math.floor(pxR*0.38)));ctx.font=`500 ${fs}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(prod.family==='futurepath'?(prod.id==='fp1612'?'FP 16/12':'FP 18/14'):prod.label.split(' ')[0],sx,sy);}
+    if(pxR>13){
+	  ctx.fillStyle=isDark?'rgba(230,225,210,0.92)':'rgba(12,10,4,0.78)';
+	  const fs=Math.max(8,Math.min(11,Math.floor(pxR*0.38)));
+	  ctx.font=`500 ${fs}px sans-serif`;
+	  ctx.textAlign='center';
+	  ctx.textBaseline='middle';
+	  ctx.fillText(
+		prod.family==='futurepath'
+		  ? 'FP ' + (prod.microducts ? prod.microducts.match(/\d+\/\d+/)?.[0] ?? '' : '')
+		  : prod.label.split(' ')[0],
+		sx, sy
+	  );
+	}
   } else {
     ctx.beginPath();ctx.arc(sx,sy,pxR,0,Math.PI*2);ctx.fillStyle=isDark?'rgba(60,60,60,0.25)':'rgba(200,200,200,0.22)';ctx.fill();
     ctx.setLineDash([3,3]);ctx.strokeStyle=isDark?'rgba(220,80,80,0.75)':'rgba(180,30,30,0.7)';ctx.lineWidth=1.5;ctx.stroke();ctx.setLineDash([]);
