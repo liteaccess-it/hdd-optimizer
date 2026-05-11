@@ -145,21 +145,25 @@
     header span { display:none !important; }
     .no-print { display:none !important; }
     .table-scroll { max-height:none !important; overflow:visible !important; border:none !important; border-radius:0 !important; }
-    .route-block { page-break-inside:avoid; border:0.5pt solid #bbb !important; margin-bottom:14pt !important; background:#fff !important; border-radius:4pt !important; }
-    .stat-grid { grid-template-columns:repeat(4,1fr) !important; page-break-inside:avoid; }
-    .stat-card { border:0.5pt solid #bbb !important; background:#fff !important; }
-    .stat-card .value { font-size:14pt !important; }
+    .route-block { page-break-inside:avoid; border:0.5pt solid #bbb !important; margin-bottom:14pt !important; background:#fff !important; border-radius:4pt !important; padding:10pt 12pt !important; }
+    .stat-grid { grid-template-columns:repeat(auto-fit,minmax(100pt,1fr)) !important; page-break-inside:avoid; margin-bottom:14pt !important; }
+    .stat-card { border:0.5pt solid #bbb !important; background:#fff !important; padding:8pt 10pt !important; }
+    .stat-card .value { font-size:13pt !important; }
+    .stat-card .label { font-size:8pt !important; }
+    .stat-card .sub   { font-size:8pt !important; }
     table { font-size:8pt !important; width:100% !important; border-collapse:collapse !important; }
-    th { background:#eeeeee !important; color:#000 !important; border-bottom:1pt solid #000 !important; padding:4pt 6pt !important; }
+    th { background:#eeeeee !important; color:#000 !important; border-bottom:1pt solid #000 !important; padding:4pt 6pt !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     td { border-bottom:0.5pt solid #ddd !important; padding:4pt 6pt !important; }
     thead { display:table-header-group; }
+    .section-label { font-size:8pt !important; margin-top:10pt !important; margin-bottom:4pt !important; page-break-after:avoid; }
+    .route-header { padding-bottom:4pt !important; page-break-after:avoid; }
+    .route-summary { page-break-after:avoid; margin-bottom:6pt !important; }
+    .route-name { font-size:11pt !important; }
+    .route-meta { font-size:8pt !important; }
     .print-citation { display:block !important; font-size:8pt; color:#333; border-top:0.5pt solid #bbb; padding-top:8pt; margin-top:20pt; }
     a { color:#000 !important; }
-    .pm-summary-grid { page-break-inside:avoid; }
-    .legend { page-break-inside:avoid; }
-    .section-label { font-size:8pt !important; margin-top:10pt !important; }
-    .route-header { padding-bottom:4pt !important; }
-    .warn-box { border:0.5pt solid #c90 !important; background:#fffbe6 !important; }
+    .section-label + .route-block { page-break-before:avoid; }
+    .warn-box { border:0.5pt solid #c90 !important; background:#fffbe6 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   }
 </style>
 </head>
@@ -669,7 +673,131 @@ function resolvePM(rows, wtDom, wtMin) {
   return { h, label: bestG.label, pmRaw: sources[0] || '' };
 }
 
-// ─── Reamer ratio lookup by PM class ────────────────────────────────────────
+// ─── FuturePath protection risk by PM class ─────────────────────────────────
+// Two independent mechanisms — both can apply simultaneously:
+//
+// ABRASION RISK: Angular particles in bore annulus cut through FuturePath's
+//   thin oversheath (0.07"–0.10"). SDR 11 wall (OD/11) is 2–4× thicker.
+//   Relevant in rock and coarse fragment soils.
+//
+// BORE CLOSURE RISK: Formation swells or collapses back onto FuturePath,
+//   creating radial clamping. FuturePath's composite cross-section ovalises
+//   under clamping before an equivalent-OD SDR 11 ring would.
+//   Relevant in swelling/collapsing soils.
+//
+// Risk levels: 'high' | 'moderate' | 'low' | 'none'
+// Note: FuturePath SWPS *exceeds* SDR 11 safe pull at equivalent OD
+//   (7/4mm: 941 lbs vs 292 lbs SDR11; 18/14mm: 3,522 lbs vs 1,739 lbs SDR11)
+//   so the concern is NOT tensile stretch — it is abrasion and ovalisation.
+
+const PM_RISKS = {
+  //                              abrasion       closure
+  'Organic / peat':      { ab:'none',     cl:'high',
+    abNote: 'Soft — no angular particles',
+    clNote: 'Extreme rebound/squeeze — bore closes on FuturePath as peat re-expands' },
+
+  'Eolian sand':         { ab:'none',     cl:'high',
+    abNote: 'Rounded grains — no cutting edge',
+    clNote: 'Bore collapse when saturated — running sand closes against oversheath' },
+
+  'Loess':               { ab:'none',     cl:'high',
+    abNote: 'Fine-grained — no abrasion',
+    clNote: 'Collapsible fabric — bore closure certain when disturbed or wetted' },
+
+  'Volcanic ash':        { ab:'none',     cl:'high',
+    abNote: 'Soft particles — no abrasion',
+    clNote: 'Collapse-prone when saturated — bore closure risk' },
+
+  'Lacustrine deposits': { ab:'none',     cl:'high',
+    abNote: 'Fine clay/silt — no abrasion',
+    clNote: 'High-plasticity clay swells against FuturePath — ovalisation risk' },
+
+  'Marine deposits':     { ab:'none',     cl:'high',
+    abNote: 'Fine-grained — no abrasion',
+    clNote: 'Very high plasticity — worst swell risk of any clay family' },
+
+  'Glacial lake bed':    { ab:'none',     cl:'high',
+    abNote: 'Varved clay/silt — no abrasion',
+    clNote: 'Varved clay swells significantly when bore wall shear stress is released' },
+
+  'Alluvium':            { ab:'low',      cl:'moderate',
+    abNote: 'Rounded water-worn clasts — low but non-zero if gravelly',
+    clNote: 'Variable — closure risk if below water table or loose' },
+
+  'Slope alluvium':      { ab:'moderate', cl:'moderate',
+    abNote: 'May include angular hillslope fragments',
+    clNote: 'Mixed composition — closure risk if fine matrix dominates' },
+
+  'Mixed alluvium':      { ab:'low',      cl:'moderate',
+    abNote: 'Predominantly rounded clasts',
+    clNote: 'Variable by definition — moderate closure risk' },
+
+  'Colluvium':           { ab:'moderate', cl:'moderate',
+    abNote: 'Angular hillslope fragments — cutting risk on thin oversheath',
+    clNote: 'Fine matrix can swell if clay-rich' },
+
+  'Glacial till':        { ab:'moderate', cl:'moderate',
+    abNote: 'Subrounded to subangular clasts — abrasion risk from cobbles',
+    clNote: 'Clay matrix can swell; boulders can pin FuturePath in bore' },
+
+  'Glacial outwash':     { ab:'low',      cl:'none',
+    abNote: 'Rounded water-worked clasts — low abrasion',
+    clNote: 'Well-sorted, stable — bore walls hold' },
+
+  'Residuum':            { ab:'moderate', cl:'moderate',
+    abNote: 'Angular weathered rock fragments — abrasion risk',
+    clNote: 'Variable — clay-rich residuum may swell' },
+
+  'Anthropogenic':       { ab:'moderate', cl:'low',
+    abNote: 'Unknown debris — glass, metal, concrete fragments possible',
+    clNote: 'Fill is generally free-draining — closure unlikely' },
+
+  'Soft sedimentary':    { ab:'moderate', cl:'moderate',
+    abNote: 'Cemented matrix — some angular fragments on bore face',
+    clNote: 'Shale and mudstone swell when exposed to water' },
+
+  'Volcanic ash':        { ab:'none',     cl:'high',
+    abNote: 'Soft particles',
+    clNote: 'Collapse-prone when saturated' },
+
+  'Sandstone / shale':   { ab:'high',     cl:'moderate',
+    abNote: 'Quartz grains cut oversheath; shale splinters are blade-like',
+    clNote: 'Shale swells when wetted — partial bore closure' },
+
+  'Metamorphic rock':    { ab:'high',     cl:'none',
+    abNote: 'Quartz, feldspar, garnet fragments — severe abrasion; 2–4× thicker SDR11 wall is critical',
+    clNote: 'Competent — bore walls stable' },
+
+  'Igneous rock':        { ab:'high',     cl:'none',
+    abNote: 'Crystalline silicates — hard angular fragments in bore annulus',
+    clNote: 'Stable bore walls — no closure' },
+
+  'Glacial lake bed':    { ab:'none',     cl:'high',
+    abNote: 'Fine-grained',
+    clNote: 'Varved clay' },
+
+  'Coal / Organic':      { ab:'none',     cl:'moderate',
+    abNote: 'Soft — no abrasion',
+    clNote: 'Swells when wetted in some formations' },
+};
+
+const RISK_DEFAULT = { ab:'low', cl:'low',
+  abNote: 'Unknown — assess on site', clNote: 'Unknown — assess on site' };
+
+function pmRisk(label) {
+  return PM_RISKS[label.replace('*','').trim()] || RISK_DEFAULT;
+}
+
+// Risk badge HTML
+function riskBadge(level, tooltip) {
+  const cfg = {
+    high:     { bg:'#FF1744', txt:'#fff', label:'High' },
+    moderate: { bg:'#FF8C00', txt:'#fff', label:'Mod'  },
+    low:      { bg:'#76FF03', txt:'#000', label:'Low'  },
+    none:     { bg:'#E0E0E0', txt:'#555', label:'None' },
+  }[level] || { bg:'#E0E0E0', txt:'#555', label:'?' };
+  return `<span title="${tooltip}" style="cursor:help;display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;background:${cfg.bg};color:${cfg.txt}">${cfg.label}</span>`;
+}
 // Industry standard bore/reamer multipliers by material class.
 // Reamer diameter = bundle diameter × ratio.
 // Source: HDD industry practice — softer soils allow tighter ratios,
@@ -961,6 +1089,7 @@ function renderResults(allResults, p) {
       const tip    = sg.pmInfo.isSubstituted
         ? 'SSURGO returned no parent material for this map unit — substituted with Anthropogenic values as a conservative estimate.'
         : null;
+      const risk = pmRisk(sg.pmInfo.label);
       return `<tr>
         <td style="max-width:160px">
           <div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${sg.muname}">${sg.muname}</div>
@@ -971,6 +1100,8 @@ function renderResults(allResults, p) {
         <td style="text-align:right;white-space:nowrap">${Math.round(sg.ft).toLocaleString()} ft<br><span style="font-size:10px;color:var(--txt3)">${(sg.ft/5280).toFixed(2)} mi</span></td>
         <td style="text-align:right">${pct.toFixed(1)}%</td>
         <td style="text-align:right;white-space:nowrap">${sg.reamDia}"</td>
+        <td style="text-align:center">${riskBadge(risk.ab, risk.abNote)}</td>
+        <td style="text-align:center">${riskBadge(risk.cl, risk.clNote)}</td>
         <td class="${showCost?'':'cost-hidden'}" style="text-align:right">${sg.med!==null?'$'+sg.med.toFixed(0):'—'}</td>
         <td class="${showCost?'':'cost-hidden'}" style="text-align:right">${sg.med!==null?'$'+Math.round(sg.med*sg.ft).toLocaleString():'—'}</td>
       </tr>`;
@@ -982,10 +1113,9 @@ function renderResults(allResults, p) {
         <div class="route-meta">${(r.totalFt/5280).toFixed(2)} mi &nbsp;·&nbsp; ${Math.round(r.totalFt).toLocaleString()} ft &nbsp;·&nbsp; ${r.mukeys.length} SSURGO map units</div>
       </div>
       <div class="route-summary">
-        <span>Total: <b>${Math.round(r.totalFt).toLocaleString()} ft</b> (${(r.totalFt/5280).toFixed(2)} mi)</span>
-        ${showCost ? `
-        <span>Cost-plus baseline: <b>$${r.totCost.toLocaleString(undefined,{maximumFractionDigits:0})}</b></span>
-        <span>Avg $/ft: <b>$${avgCpfR.toFixed(2)}</b></span>` : ''}
+        <span>Total: <b>${Math.round(r.totalFt).toLocaleString()} ft</b> &nbsp;(${(r.totalFt/5280).toFixed(2)} mi)</span>
+        <span>Map units: <b>${r.mukeys.length}</b></span>
+        ${showCost ? `<span>Cost-plus baseline: <b>$${r.totCost.toLocaleString(undefined,{maximumFractionDigits:0})}</b></span><span>Avg $/ft: <b>$${avgCpfR.toFixed(2)}</b></span>` : ''}
         ${parseFloat(unclPct)>0 ? `<span style="color:var(--amber)">Unclassified: ${unclPct}%</span>` : ''}
       </div>
       <div class="table-scroll">
@@ -996,6 +1126,8 @@ function renderResults(allResults, p) {
             <th style="text-align:right">Length</th>
             <th style="text-align:right">%</th>
             <th style="text-align:right">Reamer</th>
+            <th style="text-align:center" title="Risk of oversheath abrasion damage from angular bore debris. FuturePath oversheath is 0.07&quot;–0.10&quot;; SDR 11 wall is 2–4× thicker.">Abrasion</th>
+            <th style="text-align:center" title="Risk of bore closure clamping causing FuturePath ovalisation. FuturePath composite cross-section is less stiff radially than SDR 11 ring.">Closure</th>
             <th class="${showCost?'':'cost-hidden'}" style="text-align:right">$/ft</th>
             <th class="${showCost?'':'cost-hidden'}" style="text-align:right">Segment $</th>
           </tr></thead>
@@ -1014,43 +1146,62 @@ function renderResults(allResults, p) {
   el.innerHTML = html;
 }
 
-// ── PDF export via browser print ─────────────────────────────────────────────
+
+// ── PDF export — self-contained print window ──────────────────────────────────
+// Opens a new window with a complete independent HTML document.
+// Layout is ALWAYS identical regardless of toggle — cost cells show grey boxes when off.
 function exportPDF() {
-  const p = window._lastP || {};
+  const p        = window._lastP || {};
   const showCost = document.getElementById('toggle-cost')?.checked ?? true;
   const pmDesc   = window._pmDescriptions || new Map();
-  const now = new Date();
+  const results  = window._analysisResults || [];
+  const now      = new Date();
   const accessDate = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
 
-  // ── Gather summary stats for the repeating compact header ──
-  const totFt   = (window._analysisResults||[]).reduce((s,r)=>s+(r.totalFt||0),0);
-  const totCost = (window._analysisResults||[]).reduce((s,r)=>s+(r.totCost||0),0);
-  const avgCpf  = totFt>0 ? totCost/totFt : 0;
-  const fileName = _analysisResults?.[0]?.route?.name || 'Route analysis';
-  const routeCount = (window._analysisResults||[]).filter(r=>!r.error).length;
+  const totFt      = results.reduce((s,r)=>s+(r.totalFt||0),0);
+  const totCost    = results.reduce((s,r)=>s+(r.totCost||0),0);
+  const avgCpf     = totFt>0 ? totCost/totFt : 0;
+  const routeCount = results.filter(r=>!r.error).length;
+  const fileName   = results[0]?.route?.name || '—';
 
-  // ── Cost rows (omitted when cost toggle is off) ──
-  const costParamRows = showCost ? `
-      <tr>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Min $/ft (easy soil, 6" ream)</b></td>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.soilMin||'—'}</td>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Max $/ft (easy soil, 24" ream)</b></td>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.soilMax||'—'}</td>
-      </tr><tr>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Min $/ft (solid bedrock, 6" ream)</b></td>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.rockMin||'—'}</td>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Max $/ft (solid bedrock, 24" ream)</b></td>
-        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.rockMax||'—'}</td>
-      </tr>` : '';
+  // Grey style for hidden cost cells
+  const GREY = 'background:#e0e0e0;color:#999;font-style:italic;text-align:center';
 
-  const costSummaryCell = showCost
-    ? `&nbsp;·&nbsp; Baseline: <b>$${(totCost/1e6).toFixed(2)}M</b> &nbsp;·&nbsp; Avg: <b>$${avgCpf.toFixed(2)}/ft</b>`
-    : '';
+  // Helper: two-column label+value pair, optionally greyed
+  const cell = (label, val, greyIfOff=false) =>
+    `<td style="padding:3pt 6pt;border:0.5pt solid #ddd;font-weight:700">${label}</td>` +
+    `<td style="padding:3pt 6pt;border:0.5pt solid #ddd;${greyIfOff&&!showCost?GREY:''}">${greyIfOff&&!showCost?'—':val}</td>`;
 
-  // ── PM descriptions table ──
-  let pmDescHTML = '';
+  // Risk badge
+  const riskBg  = { high:'#FF1744', moderate:'#FF8C00', low:'#76FF03', none:'#E0E0E0' };
+  const riskTxt = { high:'#fff',    moderate:'#fff',    low:'#000',    none:'#555'    };
+  const badge = (level, note) => {
+    const bg=riskBg[level]||'#E0E0E0', t=riskTxt[level]||'#555';
+    return `<span title="${note}" style="display:inline-block;padding:1px 5pt;border-radius:2pt;font-size:7pt;font-weight:700;background:${bg};color:${t}">${level.charAt(0).toUpperCase()+level.slice(1)}</span>`;
+  };
+
+  // ── SECTION 1: Inputs ──────────────────────────────────────────────────────
+  const sec1 = `
+  <div class="sh">HDD SSURGO Route Analysis Tool</div>
+  <table style="width:100%;font-size:8pt;border-collapse:collapse;margin-bottom:8pt">
+    <tr>
+      ${cell('Min $/ft (easy soil, 6" ream)',    '$'+(p.soilMin||'—'), true)}
+      ${cell('Max $/ft (easy soil, 24" ream)',   '$'+(p.soilMax||'—'), true)}
+    </tr><tr>
+      ${cell('Min $/ft (solid bedrock, 6" ream)','$'+(p.rockMin||'—'), true)}
+      ${cell('Max $/ft (solid bedrock, 24" ream)','$'+(p.rockMax||'—'),true)}
+    </tr><tr>
+      ${cell('Bundle diameter', (p.bundle||'—')+'"', false)}
+      ${cell('Source KML', fileName, false)}
+    </tr><tr>
+      ${cell('Major component weight', parseFloat(p.wtDom||1).toFixed(2), false)}
+      ${cell('Minor component weight', parseFloat(p.wtMin||0.2).toFixed(2), false)}
+    </tr>
+  </table>`;
+
+  // ── SECTION 2: PM descriptions + Reamer table ─────────────────────────────
   const pmTotals = {};
-  for (const r of (window._analysisResults||[])) {
+  for (const r of results) {
     if (r.error) continue;
     for (const sg of r.segments) {
       const lbl = sg.pmInfo.label;
@@ -1060,183 +1211,193 @@ function exportPDF() {
     }
   }
   const pmLabels = Object.keys(pmTotals).sort();
-  if (pmLabels.length) {
-    pmDescHTML = `
-    <div style="margin-top:10pt;page-break-before:auto">
-      <div style="font-size:9pt;font-weight:700;border-bottom:1pt solid #000;padding-bottom:3pt;margin-bottom:6pt">
-        Parent Material Descriptions (from USDA SSURGO)
+
+  const pmRows = pmLabels.map(lbl => {
+    const {ft, cost, c} = pmTotals[lbl];
+    const pct = totFt>0 ? (ft/totFt*100).toFixed(1) : '0';
+    const d   = pmDesc.get(lbl) || {};
+    const costCell = `<td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right;${showCost?'':''+GREY}">${showCost?'$'+(cost/1000).toFixed(0)+'k':'—'}</td>`;
+    return `<tr>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;white-space:nowrap">
+        <span style="display:inline-block;width:9px;height:9px;background:${c};border-radius:1px;margin-right:3px;vertical-align:middle;border:0.5px solid rgba(0,0,0,0.2)"></span><b>${lbl}</b>
+      </td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${Math.round(ft).toLocaleString()} ft</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${pct}%</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.modifier||'—'}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.genmod||'—'}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.kind||'—'}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.origin||'—'}</td>
+      ${costCell}
+    </tr>`;
+  }).join('');
+
+  const reamerData = [
+    ['Organic / peat',      '2.00','Soft organic/peat',           'Max clearance — rebound and squeeze risk'],
+    ['Eolian sand',         '2.00','Loose/running sand',           'Collapse-prone when saturated'],
+    ['Loess',               '2.00','Loose/running sand',           'Highly collapsible when disturbed or wetted'],
+    ['Volcanic ash',        '2.00','Loose/running sand',           'Collapse-prone when saturated'],
+    ['Alluvium',            '1.75','Mixed face (hedge)',            'Variable — loose to dense depending on water table'],
+    ['Mixed alluvium',      '1.75','Mixed face',                   'Variable by definition'],
+    ['Slope alluvium',      '1.75','Mixed face',                   'Variable composition, cobble risk'],
+    ['Lacustrine deposits', '1.75','Soft clay/silt',               'Swell risk — fine-grained, high plasticity'],
+    ['Marine deposits',     '1.75','Soft clay/silt',               'Notoriously swelling, high plasticity clays'],
+    ['Glacial lake bed',    '1.75','Soft clay/silt',               'Varved clay — swells significantly when disturbed'],
+    ['Anthropogenic',       '1.75','Mixed face',                   'Fill is unpredictable — conservative default'],
+    ['Colluvium',           '1.75','Mixed face',                   'Often includes angular cobbles in fine matrix'],
+    ['Glacial till',        '1.75','Mixed face',                   'Textbook mixed face — cobbles in clay matrix'],
+    ['Residuum',            '1.75','Mixed face',                   'Highly variable weathered rock zone'],
+    ['Soft sedimentary',    '1.75','Mixed face',                   'Cemented but variable; shale can swell'],
+    ['Glacial outwash',     '1.50','Dense sand/gravel',            'Sorted, well-consolidated — stable bore walls'],
+    ['Sandstone / shale',   '1.65','Hard rock / mixed face hedge', 'Shale spall risk warrants uplift from 1.50×'],
+    ['Metamorphic rock',    '1.50','Hard rock',                    'Stable walls; review if highly foliated schist'],
+    ['Igneous rock',        '1.50','Hard rock',                    'Stable walls — fracture zone in confidence band'],
+  ];
+  const reamerRows = reamerData.map(([pm,ratio,cpCat,basis],i) => {
+    const risk = pmRisk(pm);
+    const bg = i%2===0?'':'background:#f8f8f8';
+    return `<tr style="${bg}">
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd"><b>${pm}</b></td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center;font-weight:700">${ratio}×</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${cpCat}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${badge(risk.ab,risk.abNote)}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${badge(risk.cl,risk.clNote)}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;color:#333;font-size:7pt">${basis}</td>
+    </tr>`;
+  }).join('');
+
+  const sec2 = `
+  <div class="sh">HDD — SSURGO Soil Analyzer</div>
+  <div class="subh">Parent Material Descriptions (from USDA SSURGO)</div>
+  <table style="width:100%;font-size:7.5pt;border-collapse:collapse;margin-bottom:6pt">
+    <thead><tr class="thead-row">
+      <th>Parent Material</th><th style="text-align:right">Footage</th><th style="text-align:right">%</th>
+      <th>Texture (pmmodifier)</th><th>Nature (pmgenmod)</th><th>Composition (pmkind)</th><th>Origin (pmorigin)</th>
+      <th style="text-align:right">Est. cost</th>
+    </tr></thead>
+    <tbody>${pmRows||'<tr><td colspan="8" style="padding:6pt;color:#999;text-align:center">No parent material data.</td></tr>'}</tbody>
+  </table>
+  <div class="subh" style="margin-top:8pt">Reamer Size Basis — Bore-to-Reamer Ratios by Parent Material</div>
+  <div style="font-size:7pt;color:#555;margin-bottom:3pt">
+    Reamer = bundle diameter × ratio, rounded to next even inch, max 24".
+    Ratios from HDD circle packing (bore stability). FuturePath SWPS exceeds SDR 11 safe pull at equivalent OD —
+    risk is abrasion/ovalisation, not tensile overload. Contractor should review and confirm.
+  </div>
+  <table style="width:100%;font-size:7.5pt;border-collapse:collapse;margin-bottom:6pt">
+    <thead><tr class="thead-row">
+      <th>SSURGO Parent Material</th><th style="text-align:center">Ratio</th>
+      <th>Circle Packing Category</th><th style="text-align:center">Abrasion</th>
+      <th style="text-align:center">Closure</th><th>Bore Stability Basis</th>
+    </tr></thead>
+    <tbody>${reamerRows}</tbody>
+  </table>`;
+
+  // ── SECTION 3: Map unit detail ────────────────────────────────────────────
+  let routeBlocks = '';
+  for (const r of results) {
+    if (r.error) continue;
+    const unclPct = r.totalFt>0 ? (r.unclassifiedFt/r.totalFt*100).toFixed(1) : '0';
+    const avgCpfR = r.classifiedFt>0 ? r.totCost/r.classifiedFt : 0;
+    const trows = r.segments.map(sg => {
+      const pct  = r.totalFt>0 ? (sg.ft/r.totalFt*100).toFixed(1) : '0';
+      const risk = pmRisk(sg.pmInfo.label);
+      const c    = pmColor(sg.pmInfo.label).css;
+      const barPct = sg.pmInfo.h!==null ? Math.round(sg.pmInfo.h*100) : 0;
+      const cpfCell  = `<td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right;${showCost?'':''+GREY}">${showCost&&sg.med!==null?'$'+sg.med.toFixed(0):'—'}</td>`;
+      const segCell  = `<td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right;${showCost?'':''+GREY}">${showCost&&sg.med!==null?'$'+Math.round(sg.med*sg.ft).toLocaleString():'—'}</td>`;
+      return `<tr>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd">
+          <span style="display:inline-block;width:8px;height:8px;background:${c};border-radius:1px;margin-right:2px;vertical-align:middle;border:0.5px solid rgba(0,0,0,0.2)"></span>
+          <b style="font-size:7pt">${sg.muname}</b>
+          <span style="font-size:6.5pt;color:#888;display:block;margin-left:10px">${sg.musym}</span>
+          <div style="height:3px;border-radius:2px;background:linear-gradient(90deg,#639922 0%,#378ADD 50%,#E24B4A 100%);margin-top:2px;width:${barPct}%"></div>
+        </td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;font-size:7pt">${sg.pmInfo.label}</td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right;white-space:nowrap">${Math.round(sg.ft).toLocaleString()} ft<div style="font-size:6.5pt;color:#888">${(sg.ft/5280).toFixed(2)} mi</div></td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${pct}%</td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${sg.reamDia}"</td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${badge(risk.ab,risk.abNote)}</td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${badge(risk.cl,risk.clNote)}</td>
+        ${cpfCell}${segCell}
+      </tr>`;
+    }).join('');
+    routeBlocks += `
+    <div style="border:0.5pt solid #bbb;border-radius:3pt;padding:6pt 8pt;margin-bottom:8pt;page-break-inside:avoid">
+      <div style="font-size:10pt;font-weight:700;margin-bottom:1pt">${r.route.name}</div>
+      <div style="font-size:7pt;color:#555;margin-bottom:4pt">
+        ${(r.totalFt/5280).toFixed(2)} mi &nbsp;·&nbsp; ${Math.round(r.totalFt).toLocaleString()} ft &nbsp;·&nbsp; ${r.mukeys.length} SSURGO map units
+        ${showCost?` &nbsp;·&nbsp; Baseline: $${r.totCost.toLocaleString(undefined,{maximumFractionDigits:0})} &nbsp;·&nbsp; Avg $/ft: $${avgCpfR.toFixed(2)}`:''}
+        ${parseFloat(unclPct)>0?` &nbsp;·&nbsp; <span style="color:#b06000">Unclassified: ${unclPct}%</span>`:''}
       </div>
-      <table style="width:100%;font-size:8pt;border-collapse:collapse">
-        <thead>
-          <tr style="background:#eee">
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Parent Material</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:right">Footage</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:right">%</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Texture (pmmodifier)</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Nature (pmgenmod)</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Composition (pmkind)</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Origin (pmorigin)</th>
-            ${showCost ? '<th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:right">Est. cost</th>' : ''}
-          </tr>
-        </thead>
-        <tbody>
-          ${pmLabels.map(lbl => {
-            const {ft, cost, c} = pmTotals[lbl];
-            const pct = totFt>0 ? (ft/totFt*100).toFixed(1) : '0';
-            const d   = pmDesc.get(lbl) || {};
-            return `<tr>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;white-space:nowrap">
-                <span style="display:inline-block;width:10px;height:10px;background:${c};border-radius:2px;margin-right:4px;vertical-align:middle;border:0.5px solid rgba(0,0,0,0.2)"></span>
-                <b>${lbl}</b>
-              </td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:right">${Math.round(ft).toLocaleString()} ft</td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:right">${pct}%</td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.modifier||'—'}</td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.genmod||'—'}</td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.kind||'—'}</td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.origin||'—'}</td>
-              ${showCost ? `<td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:right">$${(cost/1000).toFixed(0)}k</td>` : ''}
-            </tr>`;
-          }).join('')}
-        </tbody>
+      <table style="width:100%;font-size:7pt;border-collapse:collapse">
+        <thead><tr class="thead-row">
+          <th>SSURGO map unit</th><th>Parent material</th>
+          <th style="text-align:right">Length</th><th style="text-align:right">%</th>
+          <th style="text-align:right">Reamer</th>
+          <th style="text-align:center">Abrasion</th><th style="text-align:center">Closure</th>
+          <th style="text-align:right">$/ft</th><th style="text-align:right">Segment $</th>
+        </tr></thead>
+        <tbody>${trows}</tbody>
       </table>
     </div>`;
   }
+  const sec3 = `<div class="sh">SSURGO Map Unit Detail</div>${routeBlocks}`;
 
-  // ── Reamer ratio reference table — always included regardless of cost toggle ──
-  // Purpose: allow drilling contractor to review, agree or dispute the chosen reamer sizes.
-  // Maps each SSURGO parent material class to its ratio, the circle packing category it
-  // corresponds to, and the bore stability rationale.
-  const reamerTableHTML = `
-    <div style="margin-top:12pt;page-break-inside:avoid">
-      <div style="font-size:9pt;font-weight:700;border-bottom:1pt solid #000;padding-bottom:3pt;margin-bottom:6pt">
-        Reamer Size Basis — Bore-to-Reamer Ratios by Parent Material
-      </div>
-      <div style="font-size:7.5pt;color:#555;margin-bottom:5pt">
-        Reamer diameter = bundle diameter × ratio, rounded up to next even inch, capped at 24".
-        Ratios derived from HDD circle packing analysis (bore stability basis) and reconciled
-        against USDA SSURGO parent material classes. Contractor should review and confirm
-        suitability for site-specific conditions.
-      </div>
-      <table style="width:100%;font-size:7.5pt;border-collapse:collapse">
-        <thead>
-          <tr style="background:#eee;-webkit-print-color-adjust:exact;print-color-adjust:exact">
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">SSURGO Parent Material</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:center">Ratio</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Circle Packing Category</th>
-            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Bore Stability Basis</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${[
-            ['Organic / peat',      '2.00', 'Soft organic/peat',   'Max clearance — rebound and squeeze risk during pullback'],
-            ['Eolian sand',         '2.00', 'Loose/running sand',  'Collapse-prone when saturated; running sand risk'],
-            ['Loess',               '2.00', 'Loose/running sand',  'Highly collapsible when disturbed or wetted'],
-            ['Volcanic ash',        '2.00', 'Loose/running sand',  'Collapse-prone when saturated'],
-            ['Alluvium',            '1.75', 'Mixed face (hedge)',   'Variable — ranges from dense to loose depending on water table'],
-            ['Mixed alluvium',      '1.75', 'Mixed face',          'Variable by definition'],
-            ['Slope alluvium',      '1.75', 'Mixed face',          'Variable composition, cobble risk'],
-            ['Lacustrine deposits', '1.75', 'Soft clay/silt',      'Swell risk — fine-grained, high plasticity'],
-            ['Marine deposits',     '1.75', 'Soft clay/silt',      'Notoriously swelling, high plasticity clays'],
-            ['Glacial lake bed',    '1.75', 'Soft clay/silt',      'Varved clay — swells significantly when disturbed'],
-            ['Anthropogenic',       '1.75', 'Mixed face',          'Fill is unpredictable — conservative default'],
-            ['Colluvium',           '1.75', 'Mixed face',          'Often includes cobbles in fine matrix'],
-            ['Glacial till',        '1.75', 'Mixed face',          'Textbook mixed face — cobbles/boulders in clay matrix'],
-            ['Residuum',            '1.75', 'Mixed face',          'Highly variable weathered rock zone'],
-            ['Soft sedimentary',    '1.75', 'Mixed face',          'Cemented but variable; shale can swell'],
-            ['Glacial outwash',     '1.50', 'Dense sand/gravel',   'Sorted, well-consolidated — stable bore walls'],
-            ['Sandstone / shale',   '1.65', 'Hard rock / mixed face hedge', 'Between categories — shale spall risk warrants uplift from 1.50'],
-            ['Metamorphic rock',    '1.50', 'Hard rock',           'Stable walls when competent; review if highly foliated schist'],
-            ['Igneous rock',        '1.50', 'Hard rock',           'Stable walls — fracture zone contingency handled by conf. band'],
-          ].map(([pm, ratio, cpCat, basis], i) => {
-            const bg = i%2===0 ? '' : 'background:#f8f8f8;-webkit-print-color-adjust:exact;print-color-adjust:exact';
-            return `<tr style="${bg}">
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd"><b>${pm}</b></td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:center;font-weight:700">${ratio}×</td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${cpCat}</td>
-              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;color:#333">${basis}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-      <div style="font-size:7pt;color:#777;margin-top:4pt;font-style:italic">
-        Fallback ratio for unclassified parent material: 1.75× (mixed face conservative default).
-        Circle packing categories: Hard rock 1.50×, Cobbles/boulders 1.75×, Dense sand/gravel 1.50×,
-        Loose/running sand 2.00×, Soft clay/silt 1.75×, Mixed face 1.75×, Soft organic/peat 2.00×.
-      </div>
+  // ── SECTION 4: Project summary ────────────────────────────────────────────
+  const summaryBox = (label, val, greyIfOff=false) => `
+    <div style="border:1pt solid #bbb;border-radius:4pt;padding:8pt 6pt;text-align:center;${greyIfOff&&!showCost?GREY:''}">
+      <div style="font-size:7pt;text-transform:uppercase;letter-spacing:0.06em;color:${greyIfOff&&!showCost?'#aaa':'#666'};margin-bottom:3pt">${label}</div>
+      <div style="font-size:15pt;font-weight:700;line-height:1.1;color:${greyIfOff&&!showCost?'#bbb':'#111'}">${greyIfOff&&!showCost?'—':val}</div>
     </div>`;
 
-  // ── Full first-page header block ──
-  // Prepended to body so it appears first in print document flow
-  const printHeader = document.createElement('div');
-  printHeader.id = 'pdf-print-header';
-  printHeader.style.cssText = 'display:none';
-  printHeader.innerHTML = `
-    <div style="margin-bottom:10pt;padding-bottom:8pt;border-bottom:1.5pt solid #000">
-      <div style="font-size:13pt;font-weight:700;margin-bottom:4pt">HDD SSURGO Route Analysis</div>
-      <div style="font-size:8pt;color:#555;margin-bottom:6pt">Generated ${accessDate} &nbsp;·&nbsp; ${routeCount} route${routeCount!==1?'s':''} &nbsp;·&nbsp; ${(totFt/5280).toFixed(1)} mi total${costSummaryCell}</div>
-      <table style="width:100%;font-size:8pt;border-collapse:collapse">
-        ${costParamRows}
-        <tr>
-          <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Bundle diameter</b></td>
-          <td style="padding:2pt 6pt;border:0.5pt solid #ddd">${p.bundle||'—'}"</td>
-          <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Source KML</b></td>
-          <td style="padding:2pt 6pt;border:0.5pt solid #ddd">${fileName}</td>
-        </tr>
-      </table>
-    </div>`;
-  document.body.prepend(printHeader);
+  const sec4 = `
+  <div class="sh">Project Summary</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8pt;margin-bottom:12pt">
+    ${summaryBox('Total Footage', (totFt/5280).toFixed(1)+' mi<div style="font-size:9pt;font-weight:400;margin-top:2pt">'+Math.round(totFt).toLocaleString()+' ft</div>')}
+    ${summaryBox('Routes', routeCount)}
+    ${summaryBox('Baseline Cost', '$'+(totCost/1e6).toFixed(2)+'M', true)}
+    ${summaryBox('Average $/ft',  '$'+avgCpf.toFixed(2), true)}
+  </div>`;
 
-  // ── PM descriptions — injected directly before the results block ──
-  // This places it immediately after the input header in print flow,
-  // before the per-route tables, on whatever page(s) it needs.
-  const pmDescEl = document.createElement('div');
-  pmDescEl.id = 'pdf-pm-desc';
-  pmDescEl.style.cssText = 'display:none';
-  pmDescEl.innerHTML = pmDescHTML + reamerTableHTML;
-  const resultsEl = document.getElementById('results');
-  resultsEl.parentNode.insertBefore(pmDescEl, resultsEl);
+  // ── Citation ──────────────────────────────────────────────────────────────
+  const citationHTML = `
+  <div style="font-size:7pt;color:#666;border-top:0.5pt solid #ccc;padding-top:6pt;margin-top:8pt">
+    Data from Soil Survey Staff, Natural Resources Conservation Service, United States Department of Agriculture.
+    Web Soil Survey. Available online at https://websoilsurvey.nrcs.usda.gov/. Accessed ${accessDate}.
+  </div>`;
 
-  // ── Compact repeating header for pages 2+ ──
-  const repeatHeader = document.createElement('div');
-  repeatHeader.id = 'pdf-repeat-header';
-  repeatHeader.style.cssText = 'display:none';
-  repeatHeader.innerHTML = `
-    <div style="font-size:7.5pt;color:#444;border-bottom:0.5pt solid #bbb;padding-bottom:3pt;margin-bottom:4pt">
-      HDD SSURGO Route Analysis &nbsp;·&nbsp; ${accessDate} &nbsp;·&nbsp;
-      ${routeCount} route${routeCount!==1?'s':''} &nbsp;·&nbsp; ${(totFt/5280).toFixed(1)} mi
-      ${showCost ? ` &nbsp;·&nbsp; Baseline: $${(totCost/1e6).toFixed(2)}M &nbsp;·&nbsp; Avg: $${avgCpf.toFixed(2)}/ft` : ''}
-      &nbsp;·&nbsp; Bundle: ${p.bundle||'—'}"
-    </div>`;
-  document.body.prepend(repeatHeader);
+  // ── Assemble full document ────────────────────────────────────────────────
+  const doc = `<!DOCTYPE html><html lang="en"><head>
+  <meta charset="UTF-8">
+  <title>HDD SSURGO Route Analysis — ${accessDate}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif}
+    body{padding:0;font-size:9pt;color:#111;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .sh{font-size:11pt;font-weight:700;margin:14pt 0 6pt;padding-bottom:3pt;border-bottom:1.5pt solid #000;page-break-after:avoid}
+    .sh:first-child{margin-top:0}
+    .subh{font-size:9pt;font-weight:700;margin:6pt 0 3pt;padding-bottom:2pt;border-bottom:0.5pt solid #888;page-break-after:avoid}
+    .thead-row{background:#eee;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .thead-row th{padding:3pt 4pt;border:0.5pt solid #bbb;text-align:left;font-size:7.5pt}
+    thead{display:table-header-group}
+    tr{page-break-inside:avoid}
+    @page{margin:16mm 12mm;size:letter}
+    @media screen{body{padding:18mm 14mm;max-width:210mm;margin:0 auto}}
+    @media print{body{padding:0}}
+  </style>
+  </head><body>
+  <div style="font-size:7.5pt;color:#666;margin-bottom:8pt;padding-bottom:4pt;border-bottom:0.5pt solid #ddd">
+    Generated ${accessDate} &nbsp;·&nbsp; ${routeCount} route${routeCount!==1?'s':''} &nbsp;·&nbsp; ${(totFt/5280).toFixed(1)} mi total &nbsp;·&nbsp; ${showCost?'Cost columns: shown':'Cost columns: hidden (toggle off)'}
+  </div>
+  ${sec1}${sec2}${sec3}${sec4}${citationHTML}
+  </body></html>`;
 
-  const style = document.createElement('style');
-  style.id = 'pdf-print-style';
-  style.textContent = `
-    @media print {
-      #pdf-print-header { display:block !important; }
-      #pdf-pm-desc { display:block !important; }
-      #pdf-repeat-header {
-        display:block !important;
-        position:fixed;
-        top:0; left:0; right:0;
-        background:#fff;
-        padding:4pt 14pt 0;
-        z-index:9999;
-      }
-      body { padding-top:0; }
-    }`;
-  document.head.appendChild(style);
-
-  window.print();
-
-  setTimeout(() => {
-    document.getElementById('pdf-print-header')?.remove();
-    document.getElementById('pdf-pm-desc')?.remove();
-    document.getElementById('pdf-repeat-header')?.remove();
-    document.getElementById('pdf-print-style')?.remove();
-  }, 1500);
+  const win = window.open('','_blank','width=960,height=720');
+  if (!win) { alert('Pop-up blocked — please allow pop-ups for this page and try again.'); return; }
+  win.document.write(doc);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(), 700);
 }
+
 
 // ─── CSV export ───
 function exportCSV() {
@@ -1246,13 +1407,14 @@ function exportCSV() {
   const accessDate = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const citation = `"Data from Soil Survey Staff, Natural Resources Conservation Service, United States Department of Agriculture. Web Soil Survey. Available online at https://websoilsurvey.nrcs.usda.gov/. Accessed ${accessDate}."`;
 
-  const cols = ['Route','Map Unit','Mukey','Parent Material','Length (ft)','Length (mi)','Pct of Route','Reamer Dia (in)',
+  const cols = ['Route','Map Unit','Mukey','Parent Material','Length (ft)','Length (mi)','Pct of Route','Reamer Dia (in)','Abrasion Risk','Closure Risk',
     ...(showCost ? ['$/ft','Segment $'] : [])];
   const rows = [cols.join(',')];
   for (const r of _analysisResults) {
     if (r.error) continue;
     for (const sg of r.segments) {
-      const pct = r.totalFt > 0 ? (sg.ft/r.totalFt*100).toFixed(1) : '0';
+      const pct  = r.totalFt > 0 ? (sg.ft/r.totalFt*100).toFixed(1) : '0';
+      const risk = pmRisk(sg.pmInfo.label);
       rows.push([
         `"${r.route.name}"`,
         `"${sg.muname}"`,
@@ -1262,6 +1424,8 @@ function exportCSV() {
         (sg.ft/5280).toFixed(3),
         pct,
         sg.reamDia,
+        risk.ab,
+        risk.cl,
         ...(showCost ? [
           sg.med!==null?sg.med.toFixed(2):'',
           sg.med!==null?Math.round(sg.med*sg.ft):'',
