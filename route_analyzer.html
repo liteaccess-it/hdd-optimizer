@@ -1,0 +1,1572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HDD Route — SSURGO Soil Analyzer</title>
+<style>
+  :root {
+    --bg: #f8f7f4; --bg2: #eeecea; --bg3: #fff;
+    --txt: #1a1a18; --txt2: #5f5e5a; --txt3: #9c9a92;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.20);
+    --blue: #185FA5; --blue-bg: #E6F1FB; --blue-txt: #0C447C;
+    --green: #3B6D11; --green-bg: #EAF3DE; --green-txt: #27500A;
+    --amber: #854F0B; --amber-bg: #FAEEDA; --amber-txt: #633806;
+    --red: #A32D2D; --red-bg: #FCEBEB; --red-txt: #791F1F;
+    --teal: #0F6E56; --teal-bg: #E1F5EE; --teal-txt: #085041;
+    --radius: 8px; --radius-lg: 12px;
+    --font: system-ui, -apple-system, sans-serif;
+    --mono: 'SF Mono', 'Fira Code', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2c2c2a;
+      --txt: #e8e6df; --txt2: #a8a69e; --txt3: #6e6c65;
+      --border: rgba(255,255,255,0.10); --border2: rgba(255,255,255,0.18);
+      --blue: #85B7EB; --blue-bg: #042C53; --blue-txt: #B5D4F4;
+      --green: #97C459; --green-bg: #173404; --green-txt: #C0DD97;
+      --amber: #EF9F27; --amber-bg: #412402; --amber-txt: #FAC775;
+      --red: #F09595; --red-bg: #501313; --red-txt: #F7C1C1;
+      --teal: #5DCAA5; --teal-bg: #04342C; --teal-txt: #9FE1CB;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); font-size: 14px; background: var(--bg); color: var(--txt); min-height: 100vh; }
+  
+  header { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  header span { font-size: 12px; color: var(--txt3); }
+  
+  .layout { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 49px); }
+  
+  .sidebar { background: var(--bg3); border-right: 1px solid var(--border); padding: 20px 16px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+  
+  .main { padding: 20px; overflow-y: auto; }
+  
+  .section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--txt3); margin-bottom: 8px; }
+  
+  .drop-zone { border: 1.5px dashed var(--border2); border-radius: var(--radius-lg); padding: 24px 16px; text-align: center; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+  .drop-zone:hover, .drop-zone.over { background: var(--blue-bg); border-color: var(--blue); }
+  .drop-zone svg { width: 28px; height: 28px; color: var(--txt3); margin-bottom: 8px; }
+  .drop-zone .dz-title { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+  .drop-zone .dz-sub { font-size: 11px; color: var(--txt3); line-height: 1.5; }
+  input[type=file] { display: none; }
+  
+  .param-group { display: flex; flex-direction: column; gap: 10px; }
+  .param-row { background: var(--bg2); border-radius: var(--radius); padding: 10px 12px; }
+  .param-label { font-size: 11px; color: var(--txt2); display: flex; justify-content: space-between; margin-bottom: 5px; }
+  .param-val { font-weight: 600; color: var(--txt); }
+  input[type=range] { width: 100%; accent-color: var(--blue); }
+  
+  .wt-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--txt2); }
+  .wt-row label { min-width: 110px; }
+  .wt-row input { flex: 1; accent-color: var(--blue); }
+  .wt-row span { min-width: 32px; text-align: right; font-weight: 600; font-size: 11px; }
+  
+  .run-btn { width: 100%; padding: 10px; background: var(--blue); color: #fff; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; letter-spacing: 0.01em; transition: opacity 0.15s; }
+  .run-btn:hover { opacity: 0.88; }
+  .run-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  
+  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--blue); width: 0%; transition: width 0.3s; }
+  .status-txt { font-size: 11px; color: var(--txt3); margin-top: 5px; min-height: 16px; }
+  
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+  .stat-card .label { font-size: 10px; color: var(--txt3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .stat-card .value { font-size: 22px; font-weight: 600; line-height: 1.1; }
+  .stat-card .sub { font-size: 11px; color: var(--txt2); margin-top: 2px; }
+  
+  .route-block { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 16px; }
+  .route-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .route-name { font-size: 14px; font-weight: 600; }
+  .route-meta { font-size: 11px; color: var(--txt2); }
+  .route-summary { font-size: 12px; color: var(--txt2); margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 16px; }
+  .route-summary b { color: var(--txt); }
+
+  .table-scroll { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 8px; }
+  .table-scroll table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .table-scroll thead th { position: sticky; top: 0; background: var(--bg3); z-index: 1; border-bottom: 1px solid var(--border2); }
+  th { text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--txt3); padding: 6px 8px; white-space: nowrap; }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+
+  .num-field { background: var(--bg2); border-radius: var(--radius); padding: 8px 10px; }
+  .num-field label { font-size: 10px; color: var(--txt3); display: block; margin-bottom: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .num-field input[type=number] { width: 100%; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; padding: 5px 8px; font-size: 13px; font-weight: 600; color: var(--txt); outline: none; }
+  .num-field input[type=number]:focus { border-color: var(--blue); }
+
+  .export-btn { font-size: 11px; padding: 5px 10px; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--bg2); color: var(--txt2); cursor: pointer; }
+  .export-btn:hover { background: var(--bg); color: var(--txt); }
+  
+  .pm-swatch { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .pm-swatch-block { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
+
+  .cost-bar-wrap { position: relative; height: 5px; background: var(--bg2); border-radius: 3px; margin-top: 4px; }
+  .cost-bar-fill { position: absolute; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #639922 0%, #378ADD 50%, #E24B4A 100%); }
+
+  .error-box { background: var(--red-bg); border: 1px solid var(--red); border-radius: var(--radius); padding: 12px 14px; font-size: 12px; color: var(--red-txt); margin-bottom: 12px; }
+  .warn-box { background: var(--amber-bg); border: 1px solid var(--amber); border-radius: var(--radius); padding: 10px 12px; font-size: 11px; color: var(--amber-txt); margin-top: 10px; }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--txt3); }
+  .empty-state svg { width: 40px; height: 40px; margin-bottom: 12px; opacity: 0.4; }
+  .empty-state p { font-size: 13px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .leg-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--txt2); }
+  .leg-swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
+
+  .toggle-row { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--txt2); margin-bottom:8px; }
+  .toggle-sw { position:relative; display:inline-block; width:34px; height:18px; flex-shrink:0; }
+  .toggle-sw input { opacity:0; width:0; height:0; }
+  .toggle-sw .sl { position:absolute; inset:0; background:var(--border2); border-radius:18px; transition:.2s; cursor:pointer; }
+  .toggle-sw input:checked + .sl { background:var(--blue); }
+  .toggle-sw .sl:before { content:''; position:absolute; width:12px; height:12px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+  .toggle-sw input:checked + .sl:before { transform:translateX(16px); }
+
+  .pm-summary-grid { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+  .pm-summary-card { min-width:120px; max-width:160px; }
+  .pm-summary-swatch { height:8px; border-radius:2px; border:1px solid rgba(0,0,0,0.12); margin-bottom:3px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .pm-summary-label { font-size:10px; font-weight:600; color:var(--txt); line-height:1.3; }
+  .pm-summary-sub { font-size:10px; color:var(--txt3); }
+
+  .print-citation { display:none; }
+
+  .cost-hidden { display:none !important; }
+
+  @media print {
+    * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+    body { background:#fff !important; color:#000 !important; font-size:10pt; margin:0; }
+    .layout { display:block !important; }
+    .sidebar { display:none !important; }
+    .main { padding:0 !important; overflow:visible !important; }
+    header { border-bottom:1.5pt solid #000 !important; background:#fff !important; padding:6pt 0 10pt !important; margin-bottom:12pt; }
+    header h1 { font-size:14pt !important; color:#000 !important; }
+    header span { display:none !important; }
+    .no-print { display:none !important; }
+    .table-scroll { max-height:none !important; overflow:visible !important; border:none !important; border-radius:0 !important; }
+    .route-block { page-break-inside:avoid; border:0.5pt solid #bbb !important; margin-bottom:14pt !important; background:#fff !important; border-radius:4pt !important; }
+    .stat-grid { grid-template-columns:repeat(4,1fr) !important; page-break-inside:avoid; }
+    .stat-card { border:0.5pt solid #bbb !important; background:#fff !important; }
+    .stat-card .value { font-size:14pt !important; }
+    table { font-size:8pt !important; width:100% !important; border-collapse:collapse !important; }
+    th { background:#eeeeee !important; color:#000 !important; border-bottom:1pt solid #000 !important; padding:4pt 6pt !important; }
+    td { border-bottom:0.5pt solid #ddd !important; padding:4pt 6pt !important; }
+    thead { display:table-header-group; }
+    .print-citation { display:block !important; font-size:8pt; color:#333; border-top:0.5pt solid #bbb; padding-top:8pt; margin-top:20pt; }
+    a { color:#000 !important; }
+    .pm-summary-grid { page-break-inside:avoid; }
+    .legend { page-break-inside:avoid; }
+    .section-label { font-size:8pt !important; margin-top:10pt !important; }
+    .route-header { padding-bottom:4pt !important; }
+    .warn-box { border:0.5pt solid #c90 !important; background:#fffbe6 !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>HDD Route — SSURGO Soil Analyzer</h1>
+  <span>Upload a KML/KMZ polyline → get footage by parent material class → cost estimate</span>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+
+  <div>
+    <div class="section-label">Route file</div>
+    <div class="drop-zone" id="dz">
+      <input type="file" id="file-in" accept=".kml,.kmz">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M16 8l-4-4-4 4M12 4v12"/></svg>
+      <div class="dz-title">Drop KML or KMZ here</div>
+      <div class="dz-sub">Simple polyline routes · 5–150 miles · multi-route supported</div>
+    </div>
+    <div id="file-info" style="font-size:11px;color:var(--txt3);margin-top:6px;min-height:16px"></div>
+  </div>
+
+  <div>
+    <div class="section-label">Drilling cost parameters</div>
+    <div class="param-group">
+      <div class="num-field"><label>Min. $/ft (easy soil) 6" Ream</label><input type="number" id="in-soil-min" value="18" min="5" max="100" step="1"></div>
+      <div class="num-field"><label>Max. $/ft (easy soil) 24" Ream</label><input type="number" id="in-soil-max" value="38" min="5" max="200" step="1"></div>
+      <div class="num-field"><label>Min. $/ft (solid bedrock) 6" Ream</label><input type="number" id="in-rock-min" value="55" min="5" max="200" step="1"></div>
+      <div class="num-field"><label>Max. $/ft (solid bedrock) 24" Ream</label><input type="number" id="in-rock-max" value="120" min="10" max="500" step="1"></div>
+      <div class="num-field"><label>Effective conduit bundle diameter (in)</label><input type="number" id="in-bundle" value="4" min="0.5" max="36" step="0.5"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-label">SSURGO parent material weighting</div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:7px">
+      <div class="wt-row"><label>Dominant component</label><input type="range" id="wt-dom" min="0.5" max="1.0" step="0.05" value="1.0"><span id="lb-wt-dom">1.00</span></div>
+      <div class="wt-row"><label>Minor components</label><input type="range" id="wt-min" min="0.0" max="0.5" step="0.05" value="0.2"><span id="lb-wt-min">0.20</span></div>
+      <div style="font-size:10px;color:var(--txt3);line-height:1.5;margin-top:2px">SSURGO dominant component (majcompflag=Yes) drives the hardness score. Minor components blend in at this weight.</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-label">Run analysis</div>
+    <button class="run-btn" id="run-btn" disabled>Analyze routes</button>
+    <div style="margin-top:10px">
+      <div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
+      <div class="status-txt" id="status">Load a KML/KMZ file to begin</div>
+    </div>
+  </div>
+
+</aside>
+
+<main class="main" id="main-area">
+  <div class="empty-state" id="empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 16l4.553-2.276A1 1 0 0021 19.382V8.618a1 1 0 00-.553-.894L15 5m0 18V5M9 7l6-2"/></svg>
+    <p>Load a KML file with route polylines,<br>then click Analyze routes.</p>
+  </div>
+  <div id="results" style="display:none"></div>
+</main>
+</div>
+
+<script>
+// ─── High-contrast palette ───────────────────────────────────────────────────
+// Each PM class gets a unique vivid color optimised for Google Earth satellite
+// visibility. CSS hex for chart swatches; KML aabbggrr for linework.
+// Text color (black/white) chosen by luminance for readability on swatch.
+const PM_COLORS = {
+  // label                    css        kml          text
+  'Organic / peat':      { css:'#FFD700', kml:'ff00d7ff', txt:'#000' },
+  'Eolian sand':         { css:'#FF8C00', kml:'ff008cff', txt:'#000' },
+  'Loess':               { css:'#FFFF00', kml:'ff00ffff', txt:'#000' },
+  'Lacustrine deposits': { css:'#00E5FF', kml:'ffffe500', txt:'#000' },
+  'Alluvium':            { css:'#76FF03', kml:'ff03ff76', txt:'#000' },
+  'Marine deposits':     { css:'#FF80AB', kml:'ffab80ff', txt:'#000' },
+  'Colluvium':           { css:'#FF3D00', kml:'ff003dff', txt:'#fff' },
+  'Slope alluvium':      { css:'#00E676', kml:'ff76e600', txt:'#000' },
+  'Glacial outwash':     { css:'#2979FF', kml:'ffff7929', txt:'#fff' },
+  'Glacial till':        { css:'#D500F9', kml:'fff900d5', txt:'#fff' },
+  'Residuum':            { css:'#FF6D00', kml:'ff006dff', txt:'#fff' },
+  'Volcanic ash':        { css:'#F5F5F5', kml:'fff5f5f5', txt:'#000' },
+  'Soft sedimentary':    { css:'#00BCD4', kml:'ffd4bc00', txt:'#000' },
+  'Sandstone / shale':   { css:'#AA00FF', kml:'ffff00aa', txt:'#fff' },
+  'Metamorphic rock':    { css:'#FF4081', kml:'ff8140ff', txt:'#fff' },
+  'Igneous rock':        { css:'#FF1744', kml:'ff4417ff', txt:'#fff' },
+  'Glacial lake bed':    { css:'#651FFF', kml:'ffff1f65', txt:'#fff' },
+  'Mixed alluvium':      { css:'#CCFF90', kml:'ff90ffcc', txt:'#000' },
+  'Anthropogenic':       { css:'#B0BEC5', kml:'ffc5beb0', txt:'#000' },
+  'Anthropogenic*':      { css:'#B0BEC5', kml:'ffc5beb0', txt:'#000' },
+};
+const PM_COLOR_FALLBACK = { css:'#E0E0E0', kml:'ffe0e0e0', txt:'#000' };
+
+function pmColor(label) {
+  return PM_COLORS[label] || PM_COLOR_FALLBACK;
+}
+
+function pmSwatch(label, tooltip) {
+  const c = pmColor(label);
+  const tip = tooltip ? ` title="${tooltip}"` : '';
+  const cursor = tooltip ? ' style="cursor:help"' : '';
+  return `<span class="pm-swatch"${cursor}${tip}>` +
+    `<span class="pm-swatch-block" style="background:${c.css}"></span>${label}</span>`;
+}
+
+// ─── Hardness dictionary mapped from SSURGO pmgroupname / pmkind ───
+const PM_MAP = [
+  { h:0.00, label:'Organic / peat',       cls:'pm-alluvium',  keys:['organic','peat','muck','bog','marsh','histosol'] },
+  { h:0.05, label:'Eolian sand',          cls:'pm-loess',     keys:['eolian sand','dune sand','blown sand','coastal sand'] },
+  { h:0.06, label:'Loess',               cls:'pm-loess',     keys:['loess','loessial','wind-deposited silt'] },
+  { h:0.08, label:'Lacustrine deposits', cls:'pm-alluvium',  keys:['lacustrine','lake sediment','lake deposit','lacustrine deposits'] },
+  { h:0.10, label:'Alluvium',            cls:'pm-alluvium',  keys:['alluvium','alluvial','fluvial','stream deposit','river deposit','flood plain'] },
+  { h:0.12, label:'Marine deposits',     cls:'pm-alluvium',  keys:['marine','estuarine','coastal plain','tidal'] },
+  { h:0.15, label:'Colluvium',           cls:'pm-residuum',  keys:['colluvium','colluvial','slope wash','mass movement'] },
+  { h:0.18, label:'Slope alluvium',      cls:'pm-alluvium',  keys:['slope alluvium','footslope','local alluvium'] },
+  { h:0.20, label:'Glacial outwash',     cls:'pm-outwash',   keys:['outwash','glaciofluvial','glacial outwash','stratified drift','ice-contact','kame','esker','glacial sand and gravel'] },
+  { h:0.25, label:'Glacial till',        cls:'pm-till',      keys:['till','glacial till','diamicton','moraine','basal till','lodgement','ablation till','drift'] },
+  { h:0.28, label:'Residuum',            cls:'pm-residuum',  keys:['residuum','residual','saprolite','weathered bedrock','in-place weathering','regolith'] },
+  { h:0.35, label:'Volcanic ash',        cls:'pm-other',     keys:['volcanic ash','tephra','pumice','ejecta','lahar'] },
+  { h:0.40, label:'Soft sedimentary',    cls:'pm-rock',      keys:['chalk','marl','calcareous shale','soft shale','coal','lignite'] },
+  { h:0.55, label:'Sandstone / shale',   cls:'pm-rock',      keys:['sandstone','shale','mudstone','siltstone','claystone','sedimentary','carbonate','limestone','dolomite','residuum from sedimentary'] },
+  { h:0.75, label:'Metamorphic rock',    cls:'pm-rock',      keys:['schist','gneiss','quartzite','phyllite','slate','marble','metamorphic','residuum from metamorphic'] },
+  { h:0.85, label:'Igneous rock',        cls:'pm-rock',      keys:['granite','basalt','rhyolite','igneous','volcanic rock','intrusive','extrusive','residuum from igneous','residuum from granite','residuum from basalt','residuum from crystalline'] },
+  { h:0.50, label:'Glacial lake bed',    cls:'pm-till',      keys:['glaciolacustrine','glacial lake','proglacial lake','glaciomarine'] },
+  { h:0.30, label:'Mixed alluvium',      cls:'pm-alluvium',  keys:['mixed alluvium','heterogeneous alluvium','valley fill','stream terrace'] },
+  { h:0.20, label:'Anthropogenic',       cls:'pm-other',     keys:['human transported','anthropogenic','fill','urban','made land','dredge spoil'] },
+];
+
+function matchPM(term) {
+  if (!term) return null;
+  const t = term.toLowerCase().trim();
+  if (!t || t === 'null' || t === '') return null;
+  let best = null, bestLen = 0;
+  for (const g of PM_MAP) {
+    for (const k of g.keys) {
+      if (t === k) return g;
+      if (t.includes(k) && k.length > bestLen) { best = g; bestLen = k.length; }
+      if (k.includes(t) && t.length > bestLen && t.length > 4) { best = g; bestLen = t.length; }
+    }
+  }
+  return best;
+}
+
+// ─── Geo math ───
+function haversineM(lat1, lon1, lat2, lon2) {
+  const R = 6371000, r = Math.PI/180;
+  const φ1 = lat1*r, φ2 = lat2*r;
+  const Δφ = (lat2-lat1)*r, Δλ = (lon2-lon1)*r;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function mToFt(m) { return m * 3.28084; }
+
+// Interpolate a point along a line segment at fraction t
+function lerp(lat1,lon1,lat2,lon2,t) {
+  return [lat1+(lat2-lat1)*t, lon1+(lon2-lon1)*t];
+}
+
+// Compute total route length in meters
+function routeLengthM(coords) {
+  let len = 0;
+  for (let i=0; i<coords.length-1; i++) {
+    const [lon1,lat1]=coords[i],[lon2,lat2]=coords[i+1];
+    len += haversineM(lat1,lon1,lat2,lon2);
+  }
+  return len;
+}
+
+// Simplify line to maxPts using Douglas-Peucker inspired uniform sampling
+function simplifyLine(coords, maxPts=400) {
+  if (coords.length <= maxPts) return coords;
+  const step = (coords.length-1)/(maxPts-1);
+  const out = [];
+  for (let i=0; i<maxPts; i++) out.push(coords[Math.round(i*step)]);
+  return out;
+}
+
+// Point-in-polygon ray casting — rings is array of [[lon,lat],...] outer rings
+function pointInPolygon(px, py, rings) {
+  let inside = false;
+  for (const ring of rings) {
+    for (let i=0, j=ring.length-1; i<ring.length; j=i++) {
+      const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+      if (((yi>py) !== (yj>py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) inside=!inside;
+    }
+  }
+  return inside;
+}
+
+// ─── True line-segment / polygon intersection ───────────────────────────────
+// For each route segment AB and each polygon ring, find all t-values where AB
+// crosses a polygon edge. Collect all crossing t-values across all polygons,
+// sort them, then for each sub-interval check its midpoint to determine which
+// mukey (if any) contains it. This is geometrically exact — no sampling bias.
+
+// Segment-segment intersection parameter t along AB (0..1), or null if no crossing
+function segIntersectT(ax,ay,bx,by, cx,cy,dx,dy) {
+  const dxAB=bx-ax, dyAB=by-ay;
+  const dxCD=dx-cx, dyCD=dy-cy;
+  const denom = dxAB*dyCD - dyAB*dxCD;
+  if (Math.abs(denom) < 1e-12) return null; // parallel
+  const t = ((cx-ax)*dyCD - (cy-ay)*dxCD) / denom;
+  const u = ((cx-ax)*dyAB - (cy-ay)*dxAB) / denom;
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return t;
+  return null;
+}
+
+// All t-values where segment AB crosses any edge of any ring in a polygon set
+function crossingsForSegment(ax,ay,bx,by, rings) {
+  const ts = [];
+  for (const ring of rings) {
+    for (let i=0,j=ring.length-1; i<ring.length; j=i++) {
+      const t = segIntersectT(ax,ay,bx,by, ring[j][0],ring[j][1],ring[i][0],ring[i][1]);
+      if (t !== null) ts.push(t);
+    }
+  }
+  return ts;
+}
+
+// Compute metres of route coords that fall within each mukey's polygon set.
+// Returns Map<mukey, metres>
+function computeLineLengths(coords, polygonsByMukey) {
+  const ftPerMukey = new Map();
+  const entries = Object.entries(polygonsByMukey); // [mukey, rings[]]
+
+  for (let si=0; si<coords.length-1; si++) {
+    const [ax,ay] = coords[si];
+    const [bx,by] = coords[si+1];
+    const segLenM = haversineM(ay,ax,by,bx);
+    if (segLenM < 0.01) continue;
+
+    // Collect all t-values where this segment crosses any polygon boundary
+    const allTs = new Set([0, 1]);
+    for (const [mk, rings] of entries) {
+      for (const t of crossingsForSegment(ax,ay,bx,by, rings)) {
+        allTs.add(parseFloat(t.toFixed(9))); // deduplicate near-identical t values
+      }
+    }
+    const tSorted = [...allTs].sort((a,b)=>a-b);
+
+    // For each sub-interval, test its midpoint to assign to a mukey
+    for (let k=0; k<tSorted.length-1; k++) {
+      const t0=tSorted[k], t1=tSorted[k+1];
+      const dt = t1-t0;
+      if (dt < 1e-10) continue;
+      const mx = ax + (bx-ax)*(t0+t1)/2;
+      const my = ay + (by-ay)*(t0+t1)/2;
+      const subLenM = segLenM * dt;
+
+      for (const [mk, rings] of entries) {
+        if (pointInPolygon(mx, my, rings)) {
+          ftPerMukey.set(mk, (ftPerMukey.get(mk)||0) + subLenM);
+          break; // a point can only be in one mukey
+        }
+      }
+    }
+  }
+  return ftPerMukey;
+}
+
+// Parse WKT MULTIPOLYGON / POLYGON → array of polygons, each polygon = [outerRing, ...holeRings]
+// A POLYGON is: POLYGON((outer),(hole1),(hole2))
+// A MULTIPOLYGON is: MULTIPOLYGON(((outer),(hole)),((outer)))
+// For PiP we only need outer rings — holes make a point "outside" but SSURGO holes are rare
+// Returns: array of rings (each ring = [[lon,lat],...]) representing the outer boundaries only
+function parseWKT(wkt) {
+  if (!wkt) return null;
+  const type = wkt.trim().toUpperCase().startsWith('MULTIPOLYGON') ? 'MULTI' : 'POLY';
+
+  // Parse a coordinate pair string "x y, x y, ..." into [[x,y],...]
+  function parseRing(str) {
+    return str.trim().split(',').map(p => {
+      const parts = p.trim().split(/\s+/);
+      return [parseFloat(parts[0]), parseFloat(parts[1])];
+    }).filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+  }
+
+  const outerRings = [];
+
+  if (type === 'POLY') {
+    // POLYGON((outer ring coords),(hole coords),...)
+    // First ring group = outer, rest = holes (we skip holes for PiP purposes)
+    const match = wkt.match(/POLYGON\s*\(\s*\(([^)]+)\)/i);
+    if (match) {
+      const ring = parseRing(match[1]);
+      if (ring.length >= 3) outerRings.push(ring);
+    }
+  } else {
+    // MULTIPOLYGON(((outerA),(holeA)),((outerB)))
+    // Each top-level group (...) is one polygon — first inner group = outer ring
+    const stripped = wkt.replace(/MULTIPOLYGON\s*/i,'').trim();
+    // Walk character by character to split top-level polygon groups
+    let depth = 0, start = -1;
+    for (let i = 0; i < stripped.length; i++) {
+      if (stripped[i] === '(') {
+        depth++;
+        if (depth === 2) start = i + 1; // start of polygon group content
+      } else if (stripped[i] === ')') {
+        depth--;
+        if (depth === 1 && start !== -1) {
+          // We have one polygon group — extract just its outer ring (first inner parens)
+          const polyStr = stripped.slice(start, i);
+          const outerMatch = polyStr.match(/^\s*\(([^)]+)\)/);
+          if (outerMatch) {
+            const ring = parseRing(outerMatch[1]);
+            if (ring.length >= 3) outerRings.push(ring);
+          }
+          start = -1;
+        }
+      }
+    }
+  }
+
+  return outerRings.length ? outerRings : null;
+}
+
+// ─── KML parsing ───
+function parseKML(text) {
+  const dp = new DOMParser();
+  const doc = dp.parseFromString(text, 'text/xml');
+  const routes = [];
+  const placemarks = doc.querySelectorAll('Placemark');
+  placemarks.forEach(pm => {
+    const name = pm.querySelector('name')?.textContent?.trim() || 'Route';
+    // Try LineString and MultiGeometry/LineString
+    const linestrings = pm.querySelectorAll('LineString');
+    linestrings.forEach(ls => {
+      const coordEl = ls.querySelector('coordinates');
+      if (!coordEl) return;
+      const coords = coordEl.textContent.trim().split(/\s+/).map(c => {
+        const parts = c.split(',');
+        return [parseFloat(parts[0]), parseFloat(parts[1])]; // [lon, lat]
+      }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+      if (coords.length >= 2) routes.push({ name, coords });
+    });
+  });
+  return routes;
+}
+
+// ─── SSURGO API ───
+// Correct endpoint: https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest
+// Body must be application/x-www-form-urlencoded with a single "query" parameter
+const SDA_URL = 'https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest';
+
+async function sdaQuery(sql) {
+  // SDA post.rest: form-encoded, FORMAT=JSON+COLUMNNAME so first row = headers, rest = data
+  // Without FORMAT param the default response is XML, which causes the "Unexpected token '<'" error
+  const body = new URLSearchParams({ query: sql, FORMAT: 'JSON+COLUMNNAME' });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000); // 30-second timeout
+  let resp;
+  try {
+    resp = await fetch(SDA_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: ctrl.signal
+    });
+  } catch(e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('SSURGO request timed out after 30s — try a shorter route segment or retry.');
+    throw e;
+  }
+  clearTimeout(timer);
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`SSURGO API ${resp.status}: ${txt.replace(/<[^>]+>/g,'').trim().slice(0,200)}`);
+  }
+  const raw = await resp.text();
+  let data;
+  try { data = JSON.parse(raw); }
+  catch(e) { throw new Error('SSURGO returned non-JSON: ' + raw.replace(/<[^>]+>/g,'').trim().slice(0,200)); }
+  // JSON+COLUMNNAME format: { Table: [[col1,col2,...], [val1,val2,...], ...] }
+  const rows = data?.Table || [];
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(h => h.toLowerCase().trim());
+  return rows.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h,i) => obj[h] = row[i]);
+    return obj;
+  });
+}
+
+// Step 1: Get mukeys intersecting the route — chunked into ~50-vertex segments
+// SDA has a query size limit; we chunk the simplified line and union results
+async function getMukeysByLine(coords) {
+  const simplified = simplifyLine(coords, 300); // max 300 points total
+  const CHUNK = 50; // vertices per WKT chunk — keeps query string well under limits
+  const allMukeys = new Map();
+
+  for (let i = 0; i < simplified.length - 1; i += CHUNK - 1) {
+    const chunk = simplified.slice(i, i + CHUNK);
+    if (chunk.length < 2) continue;
+    const wktCoords = chunk.map(([lon,lat]) => `${lon.toFixed(6)} ${lat.toFixed(6)}`).join(', ');
+    const wkt = `LINESTRING(${wktCoords})`;
+
+    // Note: SDA_Get_Mukey_from_intersection_with_WktWgs84 uses plain single-quoted WKT
+    // No N'' prefix, no geometry:: cast — just the WKT string directly
+    const sql = `SELECT DISTINCT mu.mukey, mu.muname, mu.musym
+FROM mapunit mu
+WHERE mu.mukey IN (
+  SELECT DISTINCT mukey FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('${wkt}')
+)`;
+
+    const rows = await sdaQuery(sql);
+    for (const r of rows) {
+      if (!allMukeys.has(r.mukey)) allMukeys.set(r.mukey, r);
+    }
+  }
+  return [...allMukeys.values()];
+}
+
+// Step 2: Get polygon geometry for a list of mukeys
+async function getMuPolygons(mukeys) {
+  if (!mukeys.length) return [];
+  const mkList = mukeys.map(k=>`'${k}'`).join(',');
+  const sql = `
+    SELECT mukey, mupolygongeo
+    FROM mupolygon
+    WHERE mukey IN (${mkList})`;
+  return sdaQuery(sql);
+}
+
+// Step 3: Get parent material + texture descriptors for mukeys
+async function getParentMaterial(mukeys) {
+  if (!mukeys.length) return [];
+  const allRows = [];
+  for (let i = 0; i < mukeys.length; i += 100) {
+    const batch = mukeys.slice(i, i + 100);
+    const batchList = batch.map(k=>`'${k}'`).join(',');
+    // Note: SDA uses 'pmmodifier' (two i's) — the PostGIS/local name 'pmmodifer' is truncated
+    const sql = `SELECT
+  mu.mukey, mu.muname,
+  c.cokey, c.compname, c.comppct_r, c.majcompflag,
+  pmg.pmgroupname,
+  pm.pmkind, pm.pmorigin, pm.pmmodifier, pm.pmgenmod, pm.pmorder
+FROM mapunit mu
+LEFT JOIN component c ON c.mukey = mu.mukey
+LEFT JOIN copmgrp pmg ON pmg.cokey = c.cokey AND pmg.rvindicator = 'Yes'
+LEFT JOIN copm pm ON pm.copmgrpkey = pmg.copmgrpkey AND pm.pmorder = 1
+WHERE mu.mukey IN (${batchList})
+ORDER BY mu.mukey, c.majcompflag DESC, c.comppct_r DESC`;
+    const rows = await sdaQuery(sql);
+    allRows.push(...rows);
+  }
+  return allRows;
+}
+
+// Build a per-PM-label description object from the raw pmRows across all routes.
+// Returns Map<pmLabel, {modifier, genmod, kind}> with deduplicated, most-common values.
+function buildPMDescriptions(allPmRows, allSegments) {
+  // For each PM label that appears in segments, collect the raw SSURGO descriptor values
+  // from the component rows that contributed to that label.
+  const desc = new Map(); // pmLabel → {modifiers:Set, genmods:Set, kinds:Set, origins:Set}
+
+  for (const seg of allSegments) {
+    const label = seg.pmInfo?.label;
+    if (!label || seg.pmInfo?.isSubstituted) continue;
+    if (!desc.has(label)) desc.set(label, { modifiers:new Set(), genmods:new Set(), kinds:new Set(), origins:new Set() });
+    const d = desc.get(label);
+    const rows = allPmRows.filter(r => r.mukey === seg.mukey);
+    for (const r of rows) {
+      if (r.pmmodifier && r.pmmodifier.trim()) d.modifiers.add(r.pmmodifier.trim());
+      if (r.pmgenmod   && r.pmgenmod.trim())   d.genmods.add(r.pmgenmod.trim());
+      if (r.pmkind     && r.pmkind.trim())     d.kinds.add(r.pmkind.trim());
+      if (r.pmorigin   && r.pmorigin.trim())   d.origins.add(r.pmorigin.trim());
+    }
+  }
+  // Flatten sets to sorted comma-separated strings
+  const result = new Map();
+  for (const [label, d] of desc) {
+    result.set(label, {
+      modifier: [...d.modifiers].sort().join(', ') || null,
+      genmod:   [...d.genmods].sort().join(', ')   || null,
+      kind:     [...d.kinds].sort().join(', ')     || null,
+      origin:   [...d.origins].sort().join(', ')   || null,
+    });
+  }
+  return result;
+}
+
+// Resolve best parent material label for a mukey from component rows
+function resolvePM(rows, wtDom, wtMin) {
+  const domRows = rows.filter(r => r.majcompflag === 'Yes');
+  const minRows = rows.filter(r => r.majcompflag !== 'Yes');
+  let score = 0, weight = 0;
+  const sources = [];
+  
+  for (const r of domRows) {
+    const pmStr = r.pmgroupname || r.pmkind || r.pmorigin || r.compname || '';
+    const g = matchPM(pmStr);
+    if (g) { score += g.h * wtDom; weight += wtDom; sources.push(g.label); }
+  }
+  for (const r of minRows) {
+    const pmStr = r.pmgroupname || r.pmkind || r.pmorigin || r.compname || '';
+    const g = matchPM(pmStr);
+    if (g) { score += g.h * wtMin; weight += wtMin; }
+  }
+  
+  if (weight === 0) {
+    const anthro = matchPM('anthropogenic') || { h: 0.20 };
+    return { h: anthro.h, label: 'Anthropogenic*', pmRaw: rows[0]?.pmgroupname||rows[0]?.pmkind||'', isSubstituted: true };
+  }
+  const h = score / weight;
+  const bestG = matchPM(sources[0]) || { label: 'Mixed' };
+  return { h, label: bestG.label, pmRaw: sources[0] || '' };
+}
+
+// ─── Reamer ratio lookup by PM class ────────────────────────────────────────
+// Industry standard bore/reamer multipliers by material class.
+// Reamer diameter = bundle diameter × ratio.
+// Source: HDD industry practice — softer soils allow tighter ratios,
+// rock requires larger over-bore for bit clearance and cuttings removal.
+const REAMER_RATIOS = {
+  // ── Soft / collapse-risk formations ── raised to match circle packing tool bore-stability ratios
+  'Organic / peat':      2.00,  // Soft organic/peat — max clearance, rebound risk during pullback
+  'Eolian sand':         2.00,  // Loose/running sand — dry, unconsolidated, collapse-prone when saturated
+  'Loess':               2.00,  // Loose/running sand — highly collapsible when disturbed or wetted
+  'Volcanic ash':        2.00,  // Loose/running sand — collapse-prone when saturated
+  'Alluvium':            1.75,  // Mixed face hedge — ranges from dense to loose depending on WT depth
+  'Mixed alluvium':      1.75,  // Mixed face — variable by definition
+  'Slope alluvium':      1.75,  // Mixed face — variable composition
+  'Lacustrine deposits': 1.75,  // Soft clay/silt — swell risk when disturbed
+  'Marine deposits':     1.75,  // Soft clay/silt — notoriously swelling, high plasticity
+  'Glacial lake bed':    1.75,  // Soft clay/silt — varved clay, swells significantly
+  'Anthropogenic':       1.75,  // Mixed face — fill is unpredictable by nature
+  'Colluvium':           1.75,  // Mixed face — often includes cobbles in fine matrix
+  'Glacial till':        1.75,  // Mixed face — textbook mixed face with cobbles in clay matrix
+  'Residuum':            1.75,  // Mixed face — highly variable weathered rock zone
+  'Soft sedimentary':    1.75,  // Mixed face — cemented but variable; shale can swell
+  // ── Well-consolidated / stable formations ──
+  'Glacial outwash':     1.50,  // Dense sand/gravel — sorted, stable; matches CP tool exactly
+  'Sandstone / shale':   1.65,  // Between CP hard rock (1.50) and mixed face (1.75) — shale spall risk
+  'Metamorphic rock':    1.50,  // Hard rock — stable walls when competent; foliated schist flagged below
+  'Igneous rock':        1.50,  // Hard rock — stable walls; was 1.80 (overcorrected for fracture risk)
+};
+
+function reamRatio(pmLabel) {
+  return REAMER_RATIOS[pmLabel] ?? 1.75; // fallback: mixed face conservative default
+}
+
+// Round up to nearest even integer — reamer sizes come in even-inch increments (6,8,10,...)
+// Cap at 24" for telecom installations
+function reamSize(bundleDia, ratio) {
+  const raw = bundleDia * ratio;
+  const evenUp = Math.ceil(raw / 2) * 2; // next even number up
+  return Math.min(24, Math.max(6, evenUp));
+}
+
+// ─── 2D bilinear cost interpolation ─────────────────────────────────────────
+// Four corner prices define a surface:
+//   (6" ream, h=0) = soilMin   (24" ream, h=0) = soilMax
+//   (6" ream, h=1) = rockMin   (24" ream, h=1) = rockMax
+// h = hardness 0..1, reamDia = inches
+// Interpolate linearly on both axes.
+function calcCost2D(h, reamDia, p) {
+  const MIN_REAM = 6, MAX_REAM = 24;
+  const rt = Math.max(0, Math.min(1, (reamDia - MIN_REAM) / (MAX_REAM - MIN_REAM)));
+  const ht = Math.max(0, Math.min(1, Math.pow(h, 1.3))); // slight curve on hardness axis
+  // Bilinear: interpolate across ream size at h=0 (soil) and h=1 (rock), then blend
+  const atSoil = p.soilMin + (p.soilMax - p.soilMin) * rt;
+  const atRock = p.rockMin + (p.rockMax - p.rockMin) * rt;
+  return atSoil + (atRock - atSoil) * ht;
+}
+
+function getP() {
+  return {
+    soilMin: +document.getElementById('in-soil-min').value || 18,
+    soilMax: +document.getElementById('in-soil-max').value || 38,
+    rockMin: +document.getElementById('in-rock-min').value || 55,
+    rockMax: +document.getElementById('in-rock-max').value || 120,
+    bundle:  +document.getElementById('in-bundle').value  || 4,
+    wtDom:   +document.getElementById('wt-dom').value     || 1.0,
+    wtMin:   +document.getElementById('wt-min').value     || 0.2,
+  };
+}
+
+// ─── Main analysis pipeline ───
+let _routes = [];
+let _analysisResults = null;
+
+function setStatus(msg, pct) {
+  document.getElementById('status').textContent = msg;
+  document.getElementById('prog').style.width = pct + '%';
+}
+
+async function analyzeRoutes() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('results').innerHTML = '';
+  
+  const p = getP();
+  window._lastP = p;
+  const allResults = [];
+  
+  try {
+    for (let ri = 0; ri < _routes.length; ri++) {
+      const route = _routes[ri];
+      const totalFt = mToFt(routeLengthM(route.coords));
+      
+      setStatus(`Route ${ri+1}/${_routes.length}: querying SSURGO...`, (ri/_routes.length)*80);
+      
+      // Step 1: Get intersecting mukeys
+      let muRows;
+      try {
+        muRows = await getMukeysByLine(route.coords);
+      } catch(e) {
+        allResults.push({ route, error: `SSURGO API error: ${e.message}` });
+        continue;
+      }
+      
+      if (!muRows.length) {
+        allResults.push({ route, error: 'No SSURGO map units found along this route. Check route coordinates are within the contiguous US.' });
+        continue;
+      }
+      
+      const mukeys = [...new Set(muRows.map(r => r.mukey))];
+      setStatus(`Route ${ri+1}: found ${mukeys.length} map units — fetching geometry...`, (ri/_routes.length)*80 + 15);
+      
+      // Step 2: Get polygon geometries — fetch all batches in parallel
+      const polyBatches = [];
+      for (let bi=0; bi<mukeys.length; bi+=50) {
+        polyBatches.push(getMuPolygons(mukeys.slice(bi, bi+50)));
+      }
+      const polyResults = await Promise.all(polyBatches);
+      const polyRows = polyResults.flat();
+      
+      setStatus(`Route ${ri+1}: fetching parent material data...`, (ri/_routes.length)*80 + 25);
+      
+      // Step 3: Get parent material + texture descriptors
+      const pmRows = await getParentMaterial(mukeys);
+      
+      // Group PM rows by mukey
+      const pmByMukey = {};
+      for (const row of pmRows) {
+        if (!pmByMukey[row.mukey]) pmByMukey[row.mukey] = [];
+        pmByMukey[row.mukey].push(row);
+      }
+      
+      // Step 4: Build polygon lookup — all outer rings per mukey, accumulated across patches
+      const polygonsByMukey = {};
+      for (const row of polyRows) {
+        const rings = parseWKT(row.mupolygongeo);
+        if (!rings) continue;
+        if (!polygonsByMukey[row.mukey]) polygonsByMukey[row.mukey] = [];
+        polygonsByMukey[row.mukey].push(...rings);
+      }
+      const mukeyEntries = Object.entries(polygonsByMukey);
+
+      setStatus(`Route ${ri+1}: computing exact intersection (${mukeyEntries.length} map units)...`, (ri/_routes.length)*80 + 35);
+
+      // Step 5: True line-segment intersection — geometrically exact, no sampling artifacts.
+      // For each route segment AB:
+      //   1. Find all t-values (0..1 along AB) where AB crosses any polygon edge
+      //   2. Sort those t-values to produce sub-intervals
+      //   3. Test each sub-interval's midpoint with PiP to assign to exactly one mukey
+      //   4. Accumulate real metres per mukey
+      // Each sub-interval can match at most one mukey (break after first hit) so no double-counting.
+      const metersPerMukey = new Map();
+      let unclassifiedM = 0;
+
+      await new Promise(resolve => {
+        let si = 0;
+        const YIELD_EVERY = 10; // segments per async batch
+
+        function processBatch() {
+          const end = Math.min(si + YIELD_EVERY, route.coords.length - 1);
+          for (; si < end; si++) {
+            const [ax,ay] = route.coords[si];
+            const [bx,by] = route.coords[si+1];
+            const segLenM = haversineM(ay,ax,by,bx);
+            if (segLenM < 0.01) continue;
+
+            // Collect all crossing t-values from every mukey's polygon boundaries
+            const allTs = new Set([0, 1]);
+            for (const [, rings] of mukeyEntries) {
+              for (const t of crossingsForSegment(ax,ay,bx,by, rings)) {
+                allTs.add(parseFloat(t.toFixed(9)));
+              }
+            }
+            const tSorted = [...allTs].sort((a,b)=>a-b);
+
+            // Assign each sub-interval to exactly one mukey via midpoint PiP
+            for (let k=0; k<tSorted.length-1; k++) {
+              const t0=tSorted[k], t1=tSorted[k+1], dt=t1-t0;
+              if (dt < 1e-10) continue;
+              const mx = ax + (bx-ax)*(t0+t1)/2;
+              const my = ay + (by-ay)*(t0+t1)/2;
+              const subLenM = segLenM * dt;
+              let matched = false;
+              for (const [mk, rings] of mukeyEntries) {
+                if (pointInPolygon(mx, my, rings)) {
+                  metersPerMukey.set(mk, (metersPerMukey.get(mk)||0) + subLenM);
+                  matched = true;
+                  break; // sub-interval assigned — move on, no double-counting possible
+                }
+              }
+              if (!matched) unclassifiedM += subLenM;
+            }
+          }
+          const pct = Math.round(si / (route.coords.length-1) * 100);
+          setStatus(`Route ${ri+1}: intersecting… ${pct}%`, (ri/_routes.length)*80 + 35 + pct*0.1);
+          if (si < route.coords.length - 1) setTimeout(processBatch, 0);
+          else resolve();
+        }
+        processBatch();
+      });
+
+      // Step 6: Convert metres to feet, resolve PM, compute reamer, price each mukey
+      const segments = [];
+      for (const [mk, metres] of metersPerMukey) {
+        const ft = mToFt(metres);
+        const pmInfo = resolvePM(pmByMukey[mk] || [], p.wtDom, p.wtMin);
+        const muInfo = muRows.find(r => r.mukey === mk) || {};
+        const ratio   = reamRatio(pmInfo.label.replace('*','').trim()); // strip * for lookup
+        const reamDia = reamSize(p.bundle, ratio); // rounded-up even, capped at 24"
+        const med = pmInfo.h !== null ? calcCost2D(pmInfo.h, reamDia, p) : null;
+        segments.push({ mukey:mk, muname:muInfo.muname||mk, musym:muInfo.musym||'', ft, pmInfo, reamDia, ratio, med });
+      }
+      segments.sort((a,b) => b.ft - a.ft);
+
+      const unclassifiedFt = mToFt(unclassifiedM);
+      const classifiedFt   = totalFt - unclassifiedFt;
+      const totCost = segments.reduce((s,sg) => s + (sg.med||0)*sg.ft, 0);
+
+      allResults.push({ route, segments, totalFt, classifiedFt, unclassifiedFt, totCost, mukeys, _polygonsByMukey: polygonsByMukey, _pmRows: pmRows });
+    }
+    
+    // Build PM description lookup across all routes — used by PDF export
+    const allSegs = allResults.flatMap(r => r.error ? [] : r.segments);
+    const allPmRows = allResults.flatMap(r => r._pmRows || []);
+    window._pmDescriptions = buildPMDescriptions(allPmRows, allSegs);
+
+    _analysisResults = allResults;
+    window._analysisResults = allResults;
+    setStatus('Complete.', 100);
+    renderResults(allResults, p);
+    
+  } catch(e) {
+    setStatus('Error: ' + e.message, 0);
+    document.getElementById('results').innerHTML = `<div class="error-box">Error during analysis: ${e.message}<br><small>Check browser console for details. Ensure your browser can reach SDMDataAccess.sc.egov.usda.gov</small></div>`;
+  }
+  
+  btn.disabled = false;
+}
+
+function renderResults(allResults, p) {
+  const el = document.getElementById('results');
+  const showCost = document.getElementById('toggle-cost')?.checked ?? true;
+
+  const totFt   = allResults.reduce((s,r) => s + (r.totalFt||0), 0);
+  const totCost  = allResults.reduce((s,r) => s + (r.totCost||0), 0);
+  const avgCpf   = totFt > 0 ? totCost/totFt : 0;
+
+  // ── Export bar ─────────────────────────────────────────────────────────
+  let html = `
+  <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="section-label" style="margin:0">Results</div>
+      <label class="toggle-row" style="margin-bottom:0">
+        <span class="toggle-sw"><input type="checkbox" id="toggle-cost" ${showCost?'checked':''} onchange="renderResults(window._analysisResults, window._lastP)"><span class="sl"></span></span>
+        Show cost columns
+      </label>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="export-btn" onclick="exportCSV()">⬇ Export CSV</button>
+      <button class="export-btn" onclick="exportKMZ()">⬇ Export KMZ</button>
+      <button class="export-btn" onclick="exportPDF()">⬇ Export PDF</button>
+    </div>
+  </div>`;
+
+  // ── Summary cards ───────────────────────────────────────────────────────
+  html += `<div class="stat-grid" style="margin-bottom:20px;margin-top:4px">
+    <div class="stat-card"><div class="label">Total footage</div><div class="value">${(totFt/5280).toFixed(1)} mi</div><div class="sub">${Math.round(totFt).toLocaleString()} ft</div></div>
+    ${showCost ? `
+    <div class="stat-card"><div class="label">Cost-plus baseline</div><div class="value">$${(totCost/1e6).toFixed(2)}M</div><div class="sub">weighted median</div></div>
+    <div class="stat-card"><div class="label">Avg $/ft</div><div class="value">$${avgCpf.toFixed(2)}</div><div class="sub">portfolio weighted</div></div>` : ''}
+    <div class="stat-card"><div class="label">Routes</div><div class="value">${allResults.filter(r=>!r.error).length}</div></div>
+  </div>`;
+
+  // ── Map unit detail label ────────────────────────────────────────────────
+  html += `<div class="section-label" style="margin-bottom:8px">Map unit detail</div>`;
+
+  // ── Per-route blocks ─────────────────────────────────────────────────────
+  for (const r of allResults) {
+    if (r.error) {
+      html += `<div class="route-block"><div class="route-header"><div class="route-name">${r.route.name}</div></div><div class="error-box">${r.error}</div></div>`;
+      continue;
+    }
+    const unclPct = r.totalFt > 0 ? (r.unclassifiedFt/r.totalFt*100).toFixed(1) : 0;
+    const avgCpfR = r.classifiedFt > 0 ? r.totCost/r.classifiedFt : 0;
+
+    const rows = r.segments.map(sg => {
+      const pct    = r.totalFt > 0 ? (sg.ft/r.totalFt*100) : 0;
+      const barPct = sg.pmInfo.h !== null ? Math.round(sg.pmInfo.h*100) : null;
+      const tip    = sg.pmInfo.isSubstituted
+        ? 'SSURGO returned no parent material for this map unit — substituted with Anthropogenic values as a conservative estimate.'
+        : null;
+      return `<tr>
+        <td style="max-width:160px">
+          <div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${sg.muname}">${sg.muname}</div>
+          <div style="font-size:10px;color:var(--txt3)">${sg.musym}</div>
+          ${barPct!==null?`<div class="cost-bar-wrap"><div class="cost-bar-fill" style="width:${barPct}%"></div></div>`:''}
+        </td>
+        <td>${pmSwatch(sg.pmInfo.label, tip)}</td>
+        <td style="text-align:right;white-space:nowrap">${Math.round(sg.ft).toLocaleString()} ft<br><span style="font-size:10px;color:var(--txt3)">${(sg.ft/5280).toFixed(2)} mi</span></td>
+        <td style="text-align:right">${pct.toFixed(1)}%</td>
+        <td style="text-align:right;white-space:nowrap">${sg.reamDia}"</td>
+        <td class="${showCost?'':'cost-hidden'}" style="text-align:right">${sg.med!==null?'$'+sg.med.toFixed(0):'—'}</td>
+        <td class="${showCost?'':'cost-hidden'}" style="text-align:right">${sg.med!==null?'$'+Math.round(sg.med*sg.ft).toLocaleString():'—'}</td>
+      </tr>`;
+    }).join('');
+
+    html += `<div class="route-block">
+      <div class="route-header">
+        <div class="route-name">${r.route.name}</div>
+        <div class="route-meta">${(r.totalFt/5280).toFixed(2)} mi &nbsp;·&nbsp; ${Math.round(r.totalFt).toLocaleString()} ft &nbsp;·&nbsp; ${r.mukeys.length} SSURGO map units</div>
+      </div>
+      <div class="route-summary">
+        <span>Total: <b>${Math.round(r.totalFt).toLocaleString()} ft</b> (${(r.totalFt/5280).toFixed(2)} mi)</span>
+        ${showCost ? `
+        <span>Cost-plus baseline: <b>$${r.totCost.toLocaleString(undefined,{maximumFractionDigits:0})}</b></span>
+        <span>Avg $/ft: <b>$${avgCpfR.toFixed(2)}</b></span>` : ''}
+        ${parseFloat(unclPct)>0 ? `<span style="color:var(--amber)">Unclassified: ${unclPct}%</span>` : ''}
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>SSURGO map unit</th>
+            <th>Parent material</th>
+            <th style="text-align:right">Length</th>
+            <th style="text-align:right">%</th>
+            <th style="text-align:right">Reamer</th>
+            <th class="${showCost?'':'cost-hidden'}" style="text-align:right">$/ft</th>
+            <th class="${showCost?'':'cost-hidden'}" style="text-align:right">Segment $</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${parseFloat(unclPct)>5?`<div class="warn-box">⚠ ${unclPct}% of route length fell outside all SSURGO polygons — may indicate water crossings, federal lands, or projection issues.</div>`:''}
+    </div>`;
+  }
+
+  // ── Print citation (hidden on screen, shown in print) ────────────────────
+  const now = new Date();
+  const accessDate = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  html += `<div class="print-citation">Data from Soil Survey Staff, Natural Resources Conservation Service, United States Department of Agriculture. Web Soil Survey. Available online at https://websoilsurvey.nrcs.usda.gov/. Accessed ${accessDate}.</div>`;
+
+  el.innerHTML = html;
+}
+
+// ── PDF export via browser print ─────────────────────────────────────────────
+function exportPDF() {
+  const p = window._lastP || {};
+  const showCost = document.getElementById('toggle-cost')?.checked ?? true;
+  const pmDesc   = window._pmDescriptions || new Map();
+  const now = new Date();
+  const accessDate = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+
+  // ── Gather summary stats for the repeating compact header ──
+  const totFt   = (window._analysisResults||[]).reduce((s,r)=>s+(r.totalFt||0),0);
+  const totCost = (window._analysisResults||[]).reduce((s,r)=>s+(r.totCost||0),0);
+  const avgCpf  = totFt>0 ? totCost/totFt : 0;
+  const fileName = _analysisResults?.[0]?.route?.name || 'Route analysis';
+  const routeCount = (window._analysisResults||[]).filter(r=>!r.error).length;
+
+  // ── Cost rows (omitted when cost toggle is off) ──
+  const costParamRows = showCost ? `
+      <tr>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Min $/ft (easy soil, 6" ream)</b></td>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.soilMin||'—'}</td>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Max $/ft (easy soil, 24" ream)</b></td>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.soilMax||'—'}</td>
+      </tr><tr>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Min $/ft (solid bedrock, 6" ream)</b></td>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.rockMin||'—'}</td>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Max $/ft (solid bedrock, 24" ream)</b></td>
+        <td style="padding:2pt 6pt;border:0.5pt solid #ddd">$${p.rockMax||'—'}</td>
+      </tr>` : '';
+
+  const costSummaryCell = showCost
+    ? `&nbsp;·&nbsp; Baseline: <b>$${(totCost/1e6).toFixed(2)}M</b> &nbsp;·&nbsp; Avg: <b>$${avgCpf.toFixed(2)}/ft</b>`
+    : '';
+
+  // ── PM descriptions table ──
+  let pmDescHTML = '';
+  const pmTotals = {};
+  for (const r of (window._analysisResults||[])) {
+    if (r.error) continue;
+    for (const sg of r.segments) {
+      const lbl = sg.pmInfo.label;
+      if (!pmTotals[lbl]) pmTotals[lbl] = { ft:0, cost:0, c: pmColor(lbl).css };
+      pmTotals[lbl].ft   += sg.ft;
+      pmTotals[lbl].cost += (sg.med||0)*sg.ft;
+    }
+  }
+  const pmLabels = Object.keys(pmTotals).sort();
+  if (pmLabels.length) {
+    pmDescHTML = `
+    <div style="margin-top:10pt;page-break-before:auto">
+      <div style="font-size:9pt;font-weight:700;border-bottom:1pt solid #000;padding-bottom:3pt;margin-bottom:6pt">
+        Parent Material Descriptions (from USDA SSURGO)
+      </div>
+      <table style="width:100%;font-size:8pt;border-collapse:collapse">
+        <thead>
+          <tr style="background:#eee">
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Parent Material</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:right">Footage</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:right">%</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Texture (pmmodifier)</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Nature (pmgenmod)</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Composition (pmkind)</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Origin (pmorigin)</th>
+            ${showCost ? '<th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:right">Est. cost</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${pmLabels.map(lbl => {
+            const {ft, cost, c} = pmTotals[lbl];
+            const pct = totFt>0 ? (ft/totFt*100).toFixed(1) : '0';
+            const d   = pmDesc.get(lbl) || {};
+            return `<tr>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;white-space:nowrap">
+                <span style="display:inline-block;width:10px;height:10px;background:${c};border-radius:2px;margin-right:4px;vertical-align:middle;border:0.5px solid rgba(0,0,0,0.2)"></span>
+                <b>${lbl}</b>
+              </td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:right">${Math.round(ft).toLocaleString()} ft</td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:right">${pct}%</td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.modifier||'—'}</td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.genmod||'—'}</td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.kind||'—'}</td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${d.origin||'—'}</td>
+              ${showCost ? `<td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:right">$${(cost/1000).toFixed(0)}k</td>` : ''}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  // ── Reamer ratio reference table — always included regardless of cost toggle ──
+  // Purpose: allow drilling contractor to review, agree or dispute the chosen reamer sizes.
+  // Maps each SSURGO parent material class to its ratio, the circle packing category it
+  // corresponds to, and the bore stability rationale.
+  const reamerTableHTML = `
+    <div style="margin-top:12pt;page-break-inside:avoid">
+      <div style="font-size:9pt;font-weight:700;border-bottom:1pt solid #000;padding-bottom:3pt;margin-bottom:6pt">
+        Reamer Size Basis — Bore-to-Reamer Ratios by Parent Material
+      </div>
+      <div style="font-size:7.5pt;color:#555;margin-bottom:5pt">
+        Reamer diameter = bundle diameter × ratio, rounded up to next even inch, capped at 24".
+        Ratios derived from HDD circle packing analysis (bore stability basis) and reconciled
+        against USDA SSURGO parent material classes. Contractor should review and confirm
+        suitability for site-specific conditions.
+      </div>
+      <table style="width:100%;font-size:7.5pt;border-collapse:collapse">
+        <thead>
+          <tr style="background:#eee;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">SSURGO Parent Material</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:center">Ratio</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Circle Packing Category</th>
+            <th style="padding:3pt 6pt;border:0.5pt solid #bbb;text-align:left">Bore Stability Basis</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${[
+            ['Organic / peat',      '2.00', 'Soft organic/peat',   'Max clearance — rebound and squeeze risk during pullback'],
+            ['Eolian sand',         '2.00', 'Loose/running sand',  'Collapse-prone when saturated; running sand risk'],
+            ['Loess',               '2.00', 'Loose/running sand',  'Highly collapsible when disturbed or wetted'],
+            ['Volcanic ash',        '2.00', 'Loose/running sand',  'Collapse-prone when saturated'],
+            ['Alluvium',            '1.75', 'Mixed face (hedge)',   'Variable — ranges from dense to loose depending on water table'],
+            ['Mixed alluvium',      '1.75', 'Mixed face',          'Variable by definition'],
+            ['Slope alluvium',      '1.75', 'Mixed face',          'Variable composition, cobble risk'],
+            ['Lacustrine deposits', '1.75', 'Soft clay/silt',      'Swell risk — fine-grained, high plasticity'],
+            ['Marine deposits',     '1.75', 'Soft clay/silt',      'Notoriously swelling, high plasticity clays'],
+            ['Glacial lake bed',    '1.75', 'Soft clay/silt',      'Varved clay — swells significantly when disturbed'],
+            ['Anthropogenic',       '1.75', 'Mixed face',          'Fill is unpredictable — conservative default'],
+            ['Colluvium',           '1.75', 'Mixed face',          'Often includes cobbles in fine matrix'],
+            ['Glacial till',        '1.75', 'Mixed face',          'Textbook mixed face — cobbles/boulders in clay matrix'],
+            ['Residuum',            '1.75', 'Mixed face',          'Highly variable weathered rock zone'],
+            ['Soft sedimentary',    '1.75', 'Mixed face',          'Cemented but variable; shale can swell'],
+            ['Glacial outwash',     '1.50', 'Dense sand/gravel',   'Sorted, well-consolidated — stable bore walls'],
+            ['Sandstone / shale',   '1.65', 'Hard rock / mixed face hedge', 'Between categories — shale spall risk warrants uplift from 1.50'],
+            ['Metamorphic rock',    '1.50', 'Hard rock',           'Stable walls when competent; review if highly foliated schist'],
+            ['Igneous rock',        '1.50', 'Hard rock',           'Stable walls — fracture zone contingency handled by conf. band'],
+          ].map(([pm, ratio, cpCat, basis], i) => {
+            const bg = i%2===0 ? '' : 'background:#f8f8f8;-webkit-print-color-adjust:exact;print-color-adjust:exact';
+            return `<tr style="${bg}">
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd"><b>${pm}</b></td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;text-align:center;font-weight:700">${ratio}×</td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd">${cpCat}</td>
+              <td style="padding:3pt 6pt;border:0.5pt solid #ddd;color:#333">${basis}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div style="font-size:7pt;color:#777;margin-top:4pt;font-style:italic">
+        Fallback ratio for unclassified parent material: 1.75× (mixed face conservative default).
+        Circle packing categories: Hard rock 1.50×, Cobbles/boulders 1.75×, Dense sand/gravel 1.50×,
+        Loose/running sand 2.00×, Soft clay/silt 1.75×, Mixed face 1.75×, Soft organic/peat 2.00×.
+      </div>
+    </div>`;
+
+  // ── Full first-page header block ──
+  // Prepended to body so it appears first in print document flow
+  const printHeader = document.createElement('div');
+  printHeader.id = 'pdf-print-header';
+  printHeader.style.cssText = 'display:none';
+  printHeader.innerHTML = `
+    <div style="margin-bottom:10pt;padding-bottom:8pt;border-bottom:1.5pt solid #000">
+      <div style="font-size:13pt;font-weight:700;margin-bottom:4pt">HDD SSURGO Route Analysis</div>
+      <div style="font-size:8pt;color:#555;margin-bottom:6pt">Generated ${accessDate} &nbsp;·&nbsp; ${routeCount} route${routeCount!==1?'s':''} &nbsp;·&nbsp; ${(totFt/5280).toFixed(1)} mi total${costSummaryCell}</div>
+      <table style="width:100%;font-size:8pt;border-collapse:collapse">
+        ${costParamRows}
+        <tr>
+          <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Bundle diameter</b></td>
+          <td style="padding:2pt 6pt;border:0.5pt solid #ddd">${p.bundle||'—'}"</td>
+          <td style="padding:2pt 6pt;border:0.5pt solid #ddd"><b>Source KML</b></td>
+          <td style="padding:2pt 6pt;border:0.5pt solid #ddd">${fileName}</td>
+        </tr>
+      </table>
+    </div>`;
+  document.body.prepend(printHeader);
+
+  // ── PM descriptions — injected directly before the results block ──
+  // This places it immediately after the input header in print flow,
+  // before the per-route tables, on whatever page(s) it needs.
+  const pmDescEl = document.createElement('div');
+  pmDescEl.id = 'pdf-pm-desc';
+  pmDescEl.style.cssText = 'display:none';
+  pmDescEl.innerHTML = pmDescHTML + reamerTableHTML;
+  const resultsEl = document.getElementById('results');
+  resultsEl.parentNode.insertBefore(pmDescEl, resultsEl);
+
+  // ── Compact repeating header for pages 2+ ──
+  const repeatHeader = document.createElement('div');
+  repeatHeader.id = 'pdf-repeat-header';
+  repeatHeader.style.cssText = 'display:none';
+  repeatHeader.innerHTML = `
+    <div style="font-size:7.5pt;color:#444;border-bottom:0.5pt solid #bbb;padding-bottom:3pt;margin-bottom:4pt">
+      HDD SSURGO Route Analysis &nbsp;·&nbsp; ${accessDate} &nbsp;·&nbsp;
+      ${routeCount} route${routeCount!==1?'s':''} &nbsp;·&nbsp; ${(totFt/5280).toFixed(1)} mi
+      ${showCost ? ` &nbsp;·&nbsp; Baseline: $${(totCost/1e6).toFixed(2)}M &nbsp;·&nbsp; Avg: $${avgCpf.toFixed(2)}/ft` : ''}
+      &nbsp;·&nbsp; Bundle: ${p.bundle||'—'}"
+    </div>`;
+  document.body.prepend(repeatHeader);
+
+  const style = document.createElement('style');
+  style.id = 'pdf-print-style';
+  style.textContent = `
+    @media print {
+      #pdf-print-header { display:block !important; }
+      #pdf-pm-desc { display:block !important; }
+      #pdf-repeat-header {
+        display:block !important;
+        position:fixed;
+        top:0; left:0; right:0;
+        background:#fff;
+        padding:4pt 14pt 0;
+        z-index:9999;
+      }
+      body { padding-top:0; }
+    }`;
+  document.head.appendChild(style);
+
+  window.print();
+
+  setTimeout(() => {
+    document.getElementById('pdf-print-header')?.remove();
+    document.getElementById('pdf-pm-desc')?.remove();
+    document.getElementById('pdf-repeat-header')?.remove();
+    document.getElementById('pdf-print-style')?.remove();
+  }, 1500);
+}
+
+// ─── CSV export ───
+function exportCSV() {
+  if (!_analysisResults?.length) return;
+  const showCost = document.getElementById('toggle-cost')?.checked ?? true;
+  const now = new Date();
+  const accessDate = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const citation = `"Data from Soil Survey Staff, Natural Resources Conservation Service, United States Department of Agriculture. Web Soil Survey. Available online at https://websoilsurvey.nrcs.usda.gov/. Accessed ${accessDate}."`;
+
+  const cols = ['Route','Map Unit','Mukey','Parent Material','Length (ft)','Length (mi)','Pct of Route','Reamer Dia (in)',
+    ...(showCost ? ['$/ft','Segment $'] : [])];
+  const rows = [cols.join(',')];
+  for (const r of _analysisResults) {
+    if (r.error) continue;
+    for (const sg of r.segments) {
+      const pct = r.totalFt > 0 ? (sg.ft/r.totalFt*100).toFixed(1) : '0';
+      rows.push([
+        `"${r.route.name}"`,
+        `"${sg.muname}"`,
+        sg.mukey,
+        `"${sg.pmInfo.label}"`,
+        Math.round(sg.ft),
+        (sg.ft/5280).toFixed(3),
+        pct,
+        sg.reamDia,
+        ...(showCost ? [
+          sg.med!==null?sg.med.toFixed(2):'',
+          sg.med!==null?Math.round(sg.med*sg.ft):'',
+        ] : []),
+      ].join(','));
+    }
+  }
+  rows.push('');
+  rows.push(citation);
+
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'hdd_ssurgo_analysis.csv';
+  a.click();
+}
+
+// ─── KMZ export ─────────────────────────────────────────────────────────────
+
+// Interpolate sub-segment coordinates from route coords between t0 and t1
+// (same logic as the intersection engine — find the sub-segment vertices)
+// For KMZ we need actual coordinate arrays per segment.
+// We stored segment footage but not coordinates — we must recompute from the route
+// by walking the route and extracting the portions that fall in each mukey polygon.
+// Approach: re-walk route coords, assign each edge's sub-intervals to mukeys,
+// collect [lon,lat] coordinate chains per mukey.
+
+function computeSegmentCoords(route, polygonsByMukey) {
+  const mukeyEntries = Object.entries(polygonsByMukey);
+  const coordsByMukey = new Map();
+
+  for (let si=0; si<route.coords.length-1; si++) {
+    const [ax,ay] = route.coords[si];
+    const [bx,by] = route.coords[si+1];
+
+    const allTs = new Set([0, 1]);
+    for (const [,rings] of mukeyEntries) {
+      for (const t of crossingsForSegment(ax,ay,bx,by, rings)) allTs.add(parseFloat(t.toFixed(9)));
+    }
+    const tSorted = [...allTs].sort((a,b)=>a-b);
+
+    for (let k=0; k<tSorted.length-1; k++) {
+      const t0=tSorted[k], t1=tSorted[k+1], dt=t1-t0;
+      if (dt < 1e-10) continue;
+      const mx = ax+(bx-ax)*(t0+t1)/2, my = ay+(by-ay)*(t0+t1)/2;
+      for (const [mk,rings] of mukeyEntries) {
+        if (pointInPolygon(mx, my, rings)) {
+          if (!coordsByMukey.has(mk)) coordsByMukey.set(mk, []);
+          // Add start point of sub-interval; chain contiguous sub-intervals
+          const pts = coordsByMukey.get(mk);
+          const p0 = [ax+(bx-ax)*t0, ay+(by-ay)*t0];
+          const p1 = [ax+(bx-ax)*t1, ay+(by-ay)*t1];
+          // Check if last point of existing chain matches p0 (contiguous)
+          const last = pts.length > 0 ? pts[pts.length-1] : null;
+          if (!last || Math.abs(last[last.length-1][0]-p0[0])>1e-9 || Math.abs(last[last.length-1][1]-p0[1])>1e-9) {
+            pts.push([p0, p1]); // new chain
+          } else {
+            last.push(p1); // extend existing chain
+          }
+          break;
+        }
+      }
+    }
+  }
+  return coordsByMukey;
+}
+
+function kmlCoords(chain) {
+  return chain.map(([lon,lat]) => `${lon.toFixed(7)},${lat.toFixed(7)},0`).join('\n          ');
+}
+
+async function exportKMZ() {
+  if (!_analysisResults?.length) { alert('Run analysis first.'); return; }
+  const showCost = document.getElementById('toggle-cost')?.checked ?? true;
+
+  // Group all segment data by PM class across all routes
+  // We need route coords + polygonsByMukey — stored on _analysisResults
+  const pmFolders = {}; // pmLabel → [{routeName, muname, musym, med, reamDia, chains:[]}]
+
+  for (const r of _analysisResults) {
+    if (r.error || !r._polygonsByMukey) continue;
+    const coordsByMukey = computeSegmentCoords(r.route, r._polygonsByMukey);
+    for (const sg of r.segments) {
+      const chains = coordsByMukey.get(sg.mukey) || [];
+      if (!chains.length) continue;
+      const pmLabel = sg.pmInfo.label;
+      if (!pmFolders[pmLabel]) pmFolders[pmLabel] = { items: [] };
+      pmFolders[pmLabel].items.push({ routeName: r.route.name, sg, chains });
+    }
+  }
+
+  if (!Object.keys(pmFolders).length) {
+    alert('No segment coordinates available — polygon geometry may not have been stored. Please re-run the analysis.');
+    return;
+  }
+
+  // Build KML
+  let styles = '';
+  const seenLabels = new Set();
+  for (const [pmLabel] of Object.entries(pmFolders)) {
+    if (!seenLabels.has(pmLabel)) {
+      seenLabels.add(pmLabel);
+      const safeId = pmLabel.replace(/[^a-zA-Z0-9]/g, '_');
+      styles += `
+  <Style id="style-${safeId}">
+    <LineStyle><color>${pmColor(pmLabel).kml}</color><width>5</width></LineStyle>
+  </Style>`;
+    }
+  }
+
+  let folders = '';
+  for (const [pmLabel, folder] of Object.entries(pmFolders)) {
+    const safeId = pmLabel.replace(/[^a-zA-Z0-9]/g, '_');
+    let placemarks = '';
+    for (const {routeName, sg, chains} of folder.items) {
+      for (const chain of chains) {
+        if (chain.length < 2) continue;
+        placemarks += `
+    <Placemark>
+      <name>${sg.muname}</name>
+      <description><![CDATA[
+        Route: ${routeName}<br>
+        Map unit: ${sg.muname} (${sg.musym})<br>
+        Parent material: ${sg.pmInfo.label}<br>
+        Length: ${Math.round(sg.ft).toLocaleString()} ft (${(sg.ft/5280).toFixed(2)} mi)<br>
+        Reamer: ${sg.reamDia}"${showCost ? `<br>
+        $/ft: ${sg.med!==null?'$'+sg.med.toFixed(0):'—'}<br>
+        Segment $: ${sg.med!==null?'$'+Math.round(sg.med*sg.ft).toLocaleString():'—'}` : ''}
+      ]]></description>
+      <styleUrl>#style-${safeId}</styleUrl>
+      <LineString>
+        <tessellate>1</tessellate>
+        <coordinates>
+          ${kmlCoords(chain)}
+        </coordinates>
+      </LineString>
+    </Placemark>`;
+      }
+    }
+    folders += `
+  <Folder>
+    <name>${pmLabel}</name>
+    <open>0</open>${placemarks}
+  </Folder>`;
+  }
+
+  const now = new Date();
+  const accessDate = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const citation = `Data from Soil Survey Staff, Natural Resources Conservation Service, United States Department of Agriculture. Web Soil Survey. Available online at https://websoilsurvey.nrcs.usda.gov/. Accessed ${accessDate}.`;
+
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>HDD SSURGO Route Analysis</name>
+  <description><![CDATA[Routes color-coded by SSURGO parent material class.<br><br>${citation}]]></description>${styles}${folders}
+</Document>
+</kml>`;
+
+  // Zip KML into KMZ using DecompressionStream-based approach (pure browser, no library)
+  // Build minimal ZIP structure manually
+  const kmlBytes = new TextEncoder().encode(kml);
+  const filename = 'doc.kml';
+  const fnBytes  = new TextEncoder().encode(filename);
+
+  function u16(n) { return [n&0xff,(n>>8)&0xff]; }
+  function u32(n) { return [n&0xff,(n>>8)&0xff,(n>>16)&0xff,(n>>24)&0xff]; }
+
+  // CRC32
+  const crcTable = new Uint32Array(256);
+  for (let i=0; i<256; i++) { let c=i; for (let j=0; j<8; j++) c=c&1?0xEDB88320^(c>>>1):c>>>1; crcTable[i]=c; }
+  function crc32(data) { let c=0xFFFFFFFF; for (const b of data) c=crcTable[(c^b)&0xff]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+
+  const crc   = crc32(kmlBytes);
+  const fsize = kmlBytes.length;
+
+  // Local file header
+  const lfh = new Uint8Array([0x50,0x4B,0x03,0x04,0x14,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00, ...u32(crc), ...u32(fsize), ...u32(fsize),
+    ...u16(fnBytes.length), 0x00,0x00, ...fnBytes]);
+
+  const offset = lfh.length;
+
+  // Central directory (46 bytes fixed + filename)
+  // Field layout: sig(4)+vermade(2)+verneed(2)+flags(2)+comp(2)+modtime(2)+moddate(2)+
+  //   crc(4)+compsize(4)+uncompsize(4)+filenamelen(2)+extralen(2)+commentlen(2)+
+  //   diskstart(2)+intattr(2)+extattr(4)+localoffset(4) = 46 fixed bytes
+  const cd = new Uint8Array([0x50,0x4B,0x01,0x02,  // signature
+    0x14,0x00,             // version made by: 20
+    0x14,0x00,             // version needed: 20
+    0x00,0x00,             // general purpose flags
+    0x00,0x00,             // compression: stored
+    0x00,0x00,0x00,0x00,  // mod time + mod date
+    ...u32(crc),           // CRC-32
+    ...u32(fsize),         // compressed size
+    ...u32(fsize),         // uncompressed size
+    ...u16(fnBytes.length),// filename length
+    0x00,0x00,             // extra field length (2 bytes)
+    0x00,0x00,             // file comment length (2 bytes)
+    0x00,0x00,             // disk number start (2 bytes)
+    0x00,0x00,             // internal file attributes (2 bytes)
+    0x00,0x00,0x00,0x00,  // external file attributes (4 bytes) ← was only 2 bytes — bug fix
+    ...u32(0),             // relative offset of local header
+    ...fnBytes]);
+
+  const cdSize   = cd.length;
+  const cdOffset = offset + fsize;
+
+  // End of central directory
+  const eocd = new Uint8Array([0x50,0x4B,0x05,0x06,0x00,0x00,0x00,0x00,0x01,0x00,0x01,0x00,
+    ...u32(cdSize), ...u32(cdOffset), 0x00,0x00]);
+
+  const kmz = new Uint8Array(lfh.length + fsize + cd.length + eocd.length);
+  kmz.set(lfh, 0);
+  kmz.set(kmlBytes, lfh.length);
+  kmz.set(cd, lfh.length + fsize);
+  kmz.set(eocd, lfh.length + fsize + cd.length);
+
+  const blob = new Blob([kmz], {type:'application/vnd.google-earth.kmz'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'hdd_ssurgo_analysis.kmz';
+  a.click();
+}
+
+// ─── Input sync ───
+function syncSliders() {
+  document.getElementById('lb-wt-dom').textContent = parseFloat(document.getElementById('wt-dom').value).toFixed(2);
+  document.getElementById('lb-wt-min').textContent = parseFloat(document.getElementById('wt-min').value).toFixed(2);
+}
+['wt-dom','wt-min'].forEach(id => {
+  document.getElementById(id).addEventListener('input', syncSliders);
+});
+syncSliders();
+
+// ─── File handling ───
+async function handleFile(file) {
+  let text;
+  if (file.name.toLowerCase().endsWith('.kmz')) {
+    // Inline minimal ZIP parser using browser's decompressionStream or fallback fetch trick
+    // Use a CDN-free approach: read as ArrayBuffer and use DecompressionStream if available
+    // Fallback: ask user to convert KMZ to KML
+    try {
+      const ab = await file.arrayBuffer();
+      const ds = new DecompressionStream('deflate-raw');
+      // KMZ is a ZIP - need to parse ZIP structure
+      // Find the local file header for doc.kml
+      const bytes = new Uint8Array(ab);
+      // Simple ZIP parser: scan for local file headers (PK\x03\x04)
+      let kmlText = null;
+      for (let i=0; i<bytes.length-4; i++) {
+        if (bytes[i]===0x50&&bytes[i+1]===0x4B&&bytes[i+2]===0x03&&bytes[i+3]===0x04) {
+          const comprMethod = bytes[i+8]|(bytes[i+9]<<8);
+          const fnLen = bytes[i+26]|(bytes[i+27]<<8);
+          const extraLen = bytes[i+28]|(bytes[i+29]<<8);
+          const fnBytes = bytes.slice(i+30, i+30+fnLen);
+          const fn = new TextDecoder().decode(fnBytes);
+          if (fn.endsWith('.kml')) {
+            const dataStart = i+30+fnLen+extraLen;
+            const compSize = bytes[i+18]|(bytes[i+19]<<8)|(bytes[i+20]<<16)|(bytes[i+21]<<24);
+            const uncompSize = bytes[i+22]|(bytes[i+23]<<8)|(bytes[i+24]<<16)|(bytes[i+25]<<24);
+            if (comprMethod===0) {
+              kmlText = new TextDecoder().decode(bytes.slice(dataStart, dataStart+uncompSize));
+            } else if (comprMethod===8) {
+              const compData = bytes.slice(dataStart, dataStart+compSize);
+              const ds2 = new DecompressionStream('deflate-raw');
+              const writer = ds2.writable.getWriter();
+              const reader = ds2.readable.getReader();
+              writer.write(compData); writer.close();
+              const chunks = [];
+              while (true) { const {done,value} = await reader.read(); if(done)break; chunks.push(value); }
+              kmlText = new TextDecoder().decode(new Uint8Array(chunks.flatMap(c=>[...c])));
+            }
+            break;
+          }
+        }
+      }
+      if (!kmlText) throw new Error('No KML found in KMZ');
+      text = kmlText;
+    } catch(e) {
+      document.getElementById('file-info').textContent = 'KMZ parse error — try saving as KML from Google Earth instead.';
+      return;
+    }
+  } else {
+    text = await file.text();
+  }
+  
+  _routes = parseKML(text);
+  if (!_routes.length) {
+    document.getElementById('file-info').textContent = 'No polyline routes found. Check that the KML contains LineString features.';
+    return;
+  }
+  
+  const totalMi = _routes.reduce((s,r) => s + mToFt(routeLengthM(r.coords))/5280, 0);
+  document.getElementById('file-info').textContent = `✓ ${_routes.length} route${_routes.length>1?'s':''} loaded · ${totalMi.toFixed(1)} mi total`;
+  document.getElementById('run-btn').disabled = false;
+  setStatus('Ready — click Analyze routes.', 0);
+}
+
+const dz = document.getElementById('dz');
+dz.addEventListener('click', () => document.getElementById('file-in').click());
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+document.getElementById('file-in').addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+document.getElementById('run-btn').addEventListener('click', analyzeRoutes);
+</script>
+</body>
+</html>
