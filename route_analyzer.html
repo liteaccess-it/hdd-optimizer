@@ -596,17 +596,19 @@ async function getParentMaterial(mukeys) {
     const batch = mukeys.slice(i, i + 100);
     const batchList = batch.map(k=>`'${k}'`).join(',');
     // Note: SDA uses 'pmmodifier' (two i's) — the PostGIS/local name 'pmmodifer' is truncated
+    // Remove rvindicator and pmorder=1 filters — they cause NULL results when copmgrp/copm
+    // data exists but with different indicator flags. Cast a wide net and let getDesc filter.
     const sql = `SELECT
   mu.mukey, mu.muname,
   c.cokey, c.compname, c.comppct_r, c.majcompflag,
   pmg.pmgroupname,
-  pm.pmkind, pm.pmorigin, pm.pmmodifier, pm.pmgenmod, pm.pmorder
+  pm.pmorigin, pm.pmmodifier, pm.pmgenmod, pm.pmorder
 FROM mapunit mu
 LEFT JOIN component c ON c.mukey = mu.mukey
-LEFT JOIN copmgrp pmg ON pmg.cokey = c.cokey AND pmg.rvindicator = 'Yes'
-LEFT JOIN copm pm ON pm.copmgrpkey = pmg.copmgrpkey AND pm.pmorder = 1
+LEFT JOIN copmgrp pmg ON pmg.cokey = c.cokey
+LEFT JOIN copm pm ON pm.copmgrpkey = pmg.copmgrpkey
 WHERE mu.mukey IN (${batchList})
-ORDER BY mu.mukey, c.majcompflag DESC, c.comppct_r DESC`;
+ORDER BY mu.mukey, c.majcompflag DESC, c.comppct_r DESC, pm.pmorder ASC`;
     const rows = await sdaQuery(sql);
     allRows.push(...rows);
   }
@@ -618,28 +620,27 @@ ORDER BY mu.mukey, c.majcompflag DESC, c.comppct_r DESC`;
 function buildPMDescriptions(allPmRows, allSegments) {
   // For each PM label that appears in segments, collect the raw SSURGO descriptor values
   // from the component rows that contributed to that label.
-  const desc = new Map(); // pmLabel → {modifiers:Set, genmods:Set, kinds:Set, origins:Set}
+  const desc = new Map(); // pmLabel → {modifiers:Set, genmods:Set, groups:Set, origins:Set}
 
   for (const seg of allSegments) {
     const label = seg.pmInfo?.label;
     if (!label || seg.pmInfo?.isSubstituted) continue;
-    if (!desc.has(label)) desc.set(label, { modifiers:new Set(), genmods:new Set(), kinds:new Set(), origins:new Set() });
+    if (!desc.has(label)) desc.set(label, { modifiers:new Set(), genmods:new Set(), groups:new Set(), origins:new Set() });
     const d = desc.get(label);
     const rows = allPmRows.filter(r => r.mukey === seg.mukey);
     for (const r of rows) {
-      if (r.pmmodifier && r.pmmodifier.trim()) d.modifiers.add(r.pmmodifier.trim());
-      if (r.pmgenmod   && r.pmgenmod.trim())   d.genmods.add(r.pmgenmod.trim());
-      if (r.pmkind     && r.pmkind.trim())     d.kinds.add(r.pmkind.trim());
-      if (r.pmorigin   && r.pmorigin.trim())   d.origins.add(r.pmorigin.trim());
+      if (r.pmmodifier  && r.pmmodifier.trim())  d.modifiers.add(r.pmmodifier.trim());
+      if (r.pmgenmod    && r.pmgenmod.trim())    d.genmods.add(r.pmgenmod.trim());
+      if (r.pmgroupname && r.pmgroupname.trim()) d.groups.add(r.pmgroupname.trim());
+      if (r.pmorigin    && r.pmorigin.trim())    d.origins.add(r.pmorigin.trim());
     }
   }
-  // Flatten sets to sorted comma-separated strings
   const result = new Map();
   for (const [label, d] of desc) {
     result.set(label, {
       modifier: [...d.modifiers].sort().join(', ') || null,
       genmod:   [...d.genmods].sort().join(', ')   || null,
-      kind:     [...d.kinds].sort().join(', ')     || null,
+      group:    [...d.groups].sort().join(', ')    || null,
       origin:   [...d.origins].sort().join(', ')   || null,
     });
   }
@@ -950,11 +951,12 @@ async function analyzeRoutes() {
       //   4. Accumulate real metres per mukey
       // Each sub-interval can match at most one mukey (break after first hit) so no double-counting.
       const metersPerMukey = new Map();
+      const mukeySequence  = []; // geographic order — used for 'occurs' (contiguity) counting
       let unclassifiedM = 0;
 
       await new Promise(resolve => {
         let si = 0;
-        const YIELD_EVERY = 10; // segments per async batch
+        const YIELD_EVERY = 10;
 
         function processBatch() {
           const end = Math.min(si + YIELD_EVERY, route.coords.length - 1);
@@ -964,7 +966,6 @@ async function analyzeRoutes() {
             const segLenM = haversineM(ay,ax,by,bx);
             if (segLenM < 0.01) continue;
 
-            // Collect all crossing t-values from every mukey's polygon boundaries
             const allTs = new Set([0, 1]);
             for (const [, rings] of mukeyEntries) {
               for (const t of crossingsForSegment(ax,ay,bx,by, rings)) {
@@ -973,7 +974,6 @@ async function analyzeRoutes() {
             }
             const tSorted = [...allTs].sort((a,b)=>a-b);
 
-            // Assign each sub-interval to exactly one mukey via midpoint PiP
             for (let k=0; k<tSorted.length-1; k++) {
               const t0=tSorted[k], t1=tSorted[k+1], dt=t1-t0;
               if (dt < 1e-10) continue;
@@ -984,11 +984,22 @@ async function analyzeRoutes() {
               for (const [mk, rings] of mukeyEntries) {
                 if (pointInPolygon(mx, my, rings)) {
                   metersPerMukey.set(mk, (metersPerMukey.get(mk)||0) + subLenM);
+                  // Record in sequence — only append if different from last entry
+                  // (consecutive sub-intervals within same polygon stay as one run)
+                  if (mukeySequence.length === 0 || mukeySequence[mukeySequence.length-1] !== mk) {
+                    mukeySequence.push(mk);
+                  }
                   matched = true;
-                  break; // sub-interval assigned — move on, no double-counting possible
+                  break;
                 }
               }
-              if (!matched) unclassifiedM += subLenM;
+              if (!matched) {
+                // Unclassified gap — push null to break contiguity between PM runs
+                if (mukeySequence.length > 0 && mukeySequence[mukeySequence.length-1] !== null) {
+                  mukeySequence.push(null);
+                }
+                unclassifiedM += subLenM;
+              }
             }
           }
           const pct = Math.round(si / (route.coords.length-1) * 100);
@@ -1008,15 +1019,133 @@ async function analyzeRoutes() {
         const ratio   = reamRatio(pmInfo.label.replace('*','').trim()); // strip * for lookup
         const reamDia = reamSize(p.bundle, ratio); // rounded-up even, capped at 24"
         const med = pmInfo.h !== null ? calcCost2D(pmInfo.h, reamDia, p) : null;
-        segments.push({ mukey:mk, muname:muInfo.muname||mk, musym:muInfo.musym||'', ft, pmInfo, reamDia, ratio, med });
+        // Extract descriptor values — filter rows where at least one pm field is non-null
+        const mrows = pmByMukey[mk] || [];
+        const domr  = mrows.filter(r => r.majcompflag === 'Yes');
+        const allr  = domr.length ? domr : mrows;
+        // Skip rows produced by LEFT JOIN with no copm match (all pm fields null)
+        const pmr   = allr.filter(r => r.pmmodifier || r.pmgenmod || r.pmorigin || r.pmgroupname);
+        const srcr  = pmr.length ? pmr : allr;
+        const getDesc = key => {
+          const v = srcr.map(r => r[key]).find(v => v && v.trim());
+          return v || null;
+        };
+        const desc = {
+          modifier: getDesc('pmmodifier'),                                    // Textural modifier (sparse)
+          genmod:   getDesc('pmgenmod'),                                      // General modifier (sparse)
+          group:    getDesc('pmgroupname'),                                   // PM group name (well-populated)
+          origin:   getDesc('pmorigin'),                                      // Rock origin (most useful)
+        };
+        segments.push({ mukey:mk, muname:muInfo.muname||mk, musym:muInfo.musym||'', ft, pmInfo, reamDia, ratio, med, desc });
       }
       segments.sort((a,b) => b.ft - a.ft);
+
+      // ── Build PM summary per route ────────────────────────────────────────
+      // For each PM class: occurs (contiguous runs), unique mukeys, total mukey appearances,
+      // and most-prevalent descriptor value by footage for each of the four descriptor fields.
+
+      // Step A: map mukey → pmLabel using resolved segments
+      const mukeyToLabel = {};
+      for (const sg of segments) mukeyToLabel[sg.mukey] = sg.pmInfo.label;
+
+      // Step B: convert mukeySequence to a PM-class sequence (run-length encode)
+      // null entries (unclassified gaps) break contiguity
+      const pmSequence = mukeySequence.map(mk => mk === null ? null : (mukeyToLabel[mk] || null));
+
+      // Step C: compute occurs (count of contiguous runs per PM class)
+      const pmOccurs = {};
+      let prevLabel = null;
+      for (const lbl of pmSequence) {
+        if (lbl !== null && lbl !== prevLabel) {
+          pmOccurs[lbl] = (pmOccurs[lbl] || 0) + 1;
+        }
+        prevLabel = lbl; // null resets prev so next run counts fresh
+      }
+
+      // Step D: unique mukeys and total mukey appearances per PM class
+      // unique = distinct mukeys; total = count of appearances in mukeySequence (non-null, non-consecutive)
+      const pmUniqueMukeys = {}; // label → Set of mukeys
+      const pmTotalMukeys  = {}; // label → count of entries in mukeySequence
+      let prevMk = null;
+      for (const mk of mukeySequence) {
+        if (mk === null) { prevMk = null; continue; }
+        const lbl = mukeyToLabel[mk] || null;
+        if (!lbl) continue;
+        if (!pmUniqueMukeys[lbl]) pmUniqueMukeys[lbl] = new Set();
+        pmUniqueMukeys[lbl].add(mk);
+        // Total = count distinct mukey transitions (each new entry in sequence)
+        if (mk !== prevMk) pmTotalMukeys[lbl] = (pmTotalMukeys[lbl] || 0) + 1;
+        prevMk = mk;
+      }
+
+      // Step E: descriptor prevalence by footage — link descriptor to mukey's footage
+      // For each PM class, find the most-prevalent value of each descriptor field by footage
+      // pmByMukey[mk] contains the component rows with pmmodifier/pmgenmod/pmkind/pmorigin
+      const pmDescriptorFt = {}; // label → { modifier:{val→ft}, genmod:{val→ft}, kind:{val→ft}, origin:{val→ft} }
+      for (const sg of segments) {
+        const lbl = sg.pmInfo.label;
+        if (!pmDescriptorFt[lbl]) pmDescriptorFt[lbl] = { modifier:{}, genmod:{}, group:{}, origin:{} };
+        const rows = pmByMukey[sg.mukey] || [];
+        const domRows = rows.filter(r => r.majcompflag === 'Yes');
+        const allRows2 = domRows.length ? domRows : rows;
+        const pmRows2  = allRows2.filter(r => r.pmmodifier || r.pmgenmod || r.pmorigin || r.pmgroupname);
+        const useRows  = pmRows2.length ? pmRows2 : allRows2;
+        const fields = { modifier:'pmmodifier', genmod:'pmgenmod', group:'pmgroupname', origin:'pmorigin' };
+        for (const [dKey, rKey] of Object.entries(fields)) {
+          let val = useRows.map(r => r[rKey]).find(v => v && v.trim());
+          if (val) {
+            const d = pmDescriptorFt[lbl][dKey];
+            d[val] = (d[val] || 0) + sg.ft;
+          }
+        }
+      }
+
+      // Step F: pick top value per descriptor field per PM class
+      function topDescriptor(fieldObj) {
+        if (!fieldObj || !Object.keys(fieldObj).length) return null;
+        let topVal = null, topFt = 0;
+        for (const [v, ft] of Object.entries(fieldObj)) {
+          if (ft > topFt) { topFt = ft; topVal = v; }
+        }
+        return topVal ? { val: topVal, ft: topFt } : null;
+      }
+
+      // Assemble pmSummary: one entry per PM label, sorted by footage desc
+      const pmSummaryMap = {};
+      for (const sg of segments) {
+        const lbl = sg.pmInfo.label;
+        if (!pmSummaryMap[lbl]) pmSummaryMap[lbl] = { ft:0, cost:0, color: pmColor(lbl).css };
+        pmSummaryMap[lbl].ft   += sg.ft;
+        pmSummaryMap[lbl].cost += (sg.med||0) * sg.ft;
+      }
+      const pmSummary = Object.entries(pmSummaryMap)
+        .sort((a,b) => b[1].ft - a[1].ft)
+        .map(([lbl, d]) => {
+          const totalPMft = d.ft;
+          const mkSet = pmUniqueMukeys[lbl] || new Set();
+          const fields = ['modifier','genmod','group','origin'];
+          const topDesc = {};
+          for (const f of fields) {
+            const t = topDescriptor(pmDescriptorFt[lbl]?.[f]);
+            topDesc[f] = t ? { val:t.val, ft:t.ft, pct: totalPMft>0?(t.ft/totalPMft*100):0 } : null;
+          }
+          return {
+            label:        lbl,
+            ft:           totalPMft,
+            cost:         d.cost,
+            color:        d.color,
+            occurs:       pmOccurs[lbl] || 0,
+            uniqueMukeys: mkSet.size,
+            totalMukeys:  pmTotalMukeys[lbl] || 0,
+            topDesc,
+          };
+        });
 
       const unclassifiedFt = mToFt(unclassifiedM);
       const classifiedFt   = totalFt - unclassifiedFt;
       const totCost = segments.reduce((s,sg) => s + (sg.med||0)*sg.ft, 0);
 
-      allResults.push({ route, segments, totalFt, classifiedFt, unclassifiedFt, totCost, mukeys, _polygonsByMukey: polygonsByMukey, _pmRows: pmRows });
+      allResults.push({ route, segments, totalFt, classifiedFt, unclassifiedFt, totCost, mukeys, pmSummary, _polygonsByMukey: polygonsByMukey, _pmRows: pmRows });
     }
     
     // Build PM description lookup across all routes — used by PDF export
@@ -1102,6 +1231,9 @@ function renderResults(allResults, p) {
         <td style="text-align:right;white-space:nowrap">${sg.reamDia}"</td>
         <td style="text-align:center">${riskBadge(risk.ab, risk.abNote)}</td>
         <td style="text-align:center">${riskBadge(risk.cl, risk.clNote)}</td>
+        <td style="font-size:10px;color:var(--txt2);font-style:${sg.desc?.modifier?'normal':'italic'}">${sg.desc?.modifier||'—'}</td>
+        <td style="font-size:10px;color:var(--txt2);font-style:${sg.desc?.genmod?'normal':'italic'}">${sg.desc?.genmod||'—'}</td>
+        <td style="font-size:10px;color:var(--txt2)">${sg.desc?.group||'—'}</td>
         <td class="${showCost?'':'cost-hidden'}" style="text-align:right">${sg.med!==null?'$'+sg.med.toFixed(0):'—'}</td>
         <td class="${showCost?'':'cost-hidden'}" style="text-align:right">${sg.med!==null?'$'+Math.round(sg.med*sg.ft).toLocaleString():'—'}</td>
       </tr>`;
@@ -1128,12 +1260,16 @@ function renderResults(allResults, p) {
             <th style="text-align:right">Reamer</th>
             <th style="text-align:center" title="Risk of oversheath abrasion damage from angular bore debris. FuturePath oversheath is 0.07&quot;–0.10&quot;; SDR 11 wall is 2–4× thicker.">Abrasion</th>
             <th style="text-align:center" title="Risk of bore closure clamping causing FuturePath ovalisation. FuturePath composite cross-section is less stiff radially than SDR 11 ring.">Closure</th>
+            <th title="pmmodifier — textural modifier; sparse in SSURGO, blank = none recorded">Texture</th>
+            <th title="pmgenmod — general modifier; sparse in SSURGO, blank = none recorded">Nature</th>
+            <th title="pmgroupname — parent material group name; well-populated">Composition</th>
             <th class="${showCost?'':'cost-hidden'}" style="text-align:right">$/ft</th>
             <th class="${showCost?'':'cost-hidden'}" style="text-align:right">Segment $</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
+      <div style="font-size:10px;color:var(--txt3);margin-top:4px;font-style:italic">† Texture and Nature are sparsely populated in SSURGO — blank/italic = none recorded by NRCS, not missing data. Composition (PM group name) is the primary descriptive field.</div>
       ${parseFloat(unclPct)>5?`<div class="warn-box">⚠ ${unclPct}% of route length fell outside all SSURGO polygons — may indicate water crossings, federal lands, or projection issues.</div>`:''}
     </div>`;
   }
@@ -1200,33 +1336,51 @@ function exportPDF() {
   </table>`;
 
   // ── SECTION 2: PM descriptions + Reamer table ─────────────────────────────
-  const pmTotals = {};
+  const pmSummaryAll = []; // cross-route aggregation for PDF PM summary
   for (const r of results) {
-    if (r.error) continue;
-    for (const sg of r.segments) {
-      const lbl = sg.pmInfo.label;
-      if (!pmTotals[lbl]) pmTotals[lbl] = { ft:0, cost:0, c: pmColor(lbl).css };
-      pmTotals[lbl].ft   += sg.ft;
-      pmTotals[lbl].cost += (sg.med||0)*sg.ft;
+    if (r.error || !r.pmSummary) continue;
+    for (const pm of r.pmSummary) {
+      const existing = pmSummaryAll.find(x => x.label === pm.label);
+      if (!existing) {
+        pmSummaryAll.push({ ...pm }); // clone
+      } else {
+        existing.ft          += pm.ft;
+        existing.cost        += pm.cost;
+        existing.occurs      += pm.occurs;
+        existing.uniqueMukeys = Math.max(existing.uniqueMukeys, pm.uniqueMukeys); // not additive across routes
+        existing.totalMukeys += pm.totalMukeys;
+        // Keep whichever topDesc has more footage
+        for (const f of ['modifier','genmod','group','origin']) {
+          if (pm.topDesc[f] && (!existing.topDesc[f] || pm.topDesc[f].ft > existing.topDesc[f].ft)) {
+            existing.topDesc[f] = pm.topDesc[f];
+          }
+        }
+      }
     }
   }
-  const pmLabels = Object.keys(pmTotals).sort();
+  pmSummaryAll.sort((a,b) => b.ft - a.ft);
 
-  const pmRows = pmLabels.map(lbl => {
-    const {ft, cost, c} = pmTotals[lbl];
-    const pct = totFt>0 ? (ft/totFt*100).toFixed(1) : '0';
-    const d   = pmDesc.get(lbl) || {};
-    const costCell = `<td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right;${showCost?'':''+GREY}">${showCost?'$'+(cost/1000).toFixed(0)+'k':'—'}</td>`;
+  const descCell = (d, totalFt) => {
+    if (!d) return '<td style="padding:3pt 4pt;border:0.5pt solid #ddd;color:#999;font-size:7pt">—</td>';
+    const pct = totalFt > 0 ? (d.ft/totalFt*100).toFixed(0) : 0;
+    return `<td style="padding:3pt 4pt;border:0.5pt solid #ddd;font-size:7pt">${d.val}<div style="font-size:6.5pt;color:#888">${Math.round(d.ft).toLocaleString()} ft · ${pct}%</div></td>`;
+  };
+
+  const pmRows = pmSummaryAll.map(pm => {
+    const pct = totFt>0 ? (pm.ft/totFt*100).toFixed(1) : '0';
+    const costCell = `<td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right;${showCost?'':''+GREY}">${showCost?'$'+(pm.cost/1000).toFixed(0)+'k':'—'}</td>`;
     return `<tr>
       <td style="padding:3pt 4pt;border:0.5pt solid #ddd;white-space:nowrap">
-        <span style="display:inline-block;width:9px;height:9px;background:${c};border-radius:1px;margin-right:3px;vertical-align:middle;border:0.5px solid rgba(0,0,0,0.2)"></span><b>${lbl}</b>
+        <span style="display:inline-block;width:9px;height:9px;background:${pm.color};border-radius:1px;margin-right:3px;vertical-align:middle;border:0.5px solid rgba(0,0,0,0.2)"></span><b>${pm.label}</b>
       </td>
-      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${Math.round(ft).toLocaleString()} ft</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${Math.round(pm.ft).toLocaleString()} ft</td>
       <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${pct}%</td>
-      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.modifier||'—'}</td>
-      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.genmod||'—'}</td>
-      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.kind||'—'}</td>
-      <td style="padding:3pt 4pt;border:0.5pt solid #ddd">${d.origin||'—'}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${pm.occurs}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${pm.uniqueMukeys}</td>
+      <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${pm.totalMukeys}</td>
+      ${descCell(pm.topDesc.modifier, pm.ft)}
+      ${descCell(pm.topDesc.genmod,   pm.ft)}
+      ${descCell(pm.topDesc.group,    pm.ft)}
       ${costCell}
     </tr>`;
   }).join('');
@@ -1267,15 +1421,23 @@ function exportPDF() {
 
   const sec2 = `
   <div class="sh">HDD — SSURGO Soil Analyzer</div>
-  <div class="subh">Parent Material Descriptions (from USDA SSURGO)</div>
+  <div class="subh">Parent Material Descriptions (from USDA SSURGO) — sorted by footage, most prevalent first</div>
   <table style="width:100%;font-size:7.5pt;border-collapse:collapse;margin-bottom:6pt">
     <thead><tr class="thead-row">
-      <th>Parent Material</th><th style="text-align:right">Footage</th><th style="text-align:right">%</th>
-      <th>Texture (pmmodifier)</th><th>Nature (pmgenmod)</th><th>Composition (pmkind)</th><th>Origin (pmorigin)</th>
+      <th>Parent Material</th>
+      <th style="text-align:right">Footage</th>
+      <th style="text-align:right">%</th>
+      <th style="text-align:center" title="Number of separate contiguous stretches of this PM class along the route">Occurs</th>
+      <th style="text-align:center" title="Number of distinct SSURGO map unit symbols resolving to this PM class">Unique MU</th>
+      <th style="text-align:center" title="Total map unit appearances in route sequence (includes non-contiguous repeats of same MU)">Total MU</th>
+      <th title="pmmodifier — textural modifier; blank = none recorded in SSURGO (sparse field)">Texture†</th>
+      <th title="pmgenmod — general modifier; blank = none recorded in SSURGO (sparse field)">Nature†</th>
+      <th title="pmgroupname — parent material group name; consistently populated">Composition</th>
       <th style="text-align:right">Est. cost</th>
     </tr></thead>
-    <tbody>${pmRows||'<tr><td colspan="8" style="padding:6pt;color:#999;text-align:center">No parent material data.</td></tr>'}</tbody>
+    <tbody>${pmRows||'<tr><td colspan="11" style="padding:6pt;color:#999;text-align:center">No parent material data.</td></tr>'}</tbody>
   </table>
+  <div style="font-size:6.5pt;color:#777;margin-bottom:4pt;font-style:italic">† Texture (pmmodifier) and Nature (pmgenmod) are sparsely populated in SSURGO — a blank cell means no modifier was recorded by NRCS surveyors, not that data is missing. Composition (pmgroupname) is consistently populated and is the primary descriptive field for drilling assessment.</div>
   <div class="subh" style="margin-top:8pt">Reamer Size Basis — Bore-to-Reamer Ratios by Parent Material</div>
   <div style="font-size:7pt;color:#555;margin-bottom:3pt">
     Reamer = bundle diameter × ratio, rounded to next even inch, max 24".
@@ -1297,7 +1459,7 @@ function exportPDF() {
     if (r.error) continue;
     const unclPct = r.totalFt>0 ? (r.unclassifiedFt/r.totalFt*100).toFixed(1) : '0';
     const avgCpfR = r.classifiedFt>0 ? r.totCost/r.classifiedFt : 0;
-    const trows = r.segments.map(sg => {
+      const trows = r.segments.map(sg => {
       const pct  = r.totalFt>0 ? (sg.ft/r.totalFt*100).toFixed(1) : '0';
       const risk = pmRisk(sg.pmInfo.label);
       const c    = pmColor(sg.pmInfo.label).css;
@@ -1317,6 +1479,9 @@ function exportPDF() {
         <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:right">${sg.reamDia}"</td>
         <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${badge(risk.ab,risk.abNote)}</td>
         <td style="padding:3pt 4pt;border:0.5pt solid #ddd;text-align:center">${badge(risk.cl,risk.clNote)}</td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;font-size:6.5pt;color:${sg.desc?.modifier?'#444':'#bbb'};font-style:${sg.desc?.modifier?'normal':'italic'}">${sg.desc?.modifier||'—'}</td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;font-size:6.5pt;color:${sg.desc?.genmod?'#444':'#bbb'};font-style:${sg.desc?.genmod?'normal':'italic'}">${sg.desc?.genmod||'—'}</td>
+        <td style="padding:3pt 4pt;border:0.5pt solid #ddd;font-size:6.5pt;color:#444">${sg.desc?.group||'—'}</td>
         ${cpfCell}${segCell}
       </tr>`;
     }).join('');
@@ -1334,13 +1499,14 @@ function exportPDF() {
           <th style="text-align:right">Length</th><th style="text-align:right">%</th>
           <th style="text-align:right">Reamer</th>
           <th style="text-align:center">Abrasion</th><th style="text-align:center">Closure</th>
+          <th>Texture†</th><th>Nature†</th><th>Composition</th>
           <th style="text-align:right">$/ft</th><th style="text-align:right">Segment $</th>
         </tr></thead>
         <tbody>${trows}</tbody>
       </table>
     </div>`;
   }
-  const sec3 = `<div class="sh">SSURGO Map Unit Detail</div>${routeBlocks}`;
+  const sec3 = `<div class="sh">SSURGO Map Unit Detail</div>${routeBlocks}<div style="font-size:6.5pt;color:#777;margin-top:4pt;font-style:italic">† Texture and Nature are sparsely populated in SSURGO — blank = none recorded. Composition (PM group name) is the primary descriptive field.</div>`;
 
   // ── SECTION 4: Project summary ────────────────────────────────────────────
   const summaryBox = (label, val, greyIfOff=false) => `
@@ -1379,7 +1545,7 @@ function exportPDF() {
     .thead-row th{padding:3pt 4pt;border:0.5pt solid #bbb;text-align:left;font-size:7.5pt}
     thead{display:table-header-group}
     tr{page-break-inside:avoid}
-    @page{margin:16mm 12mm;size:letter}
+    @page{margin:12mm 14mm;size:17in 11in landscape}
     @media screen{body{padding:18mm 14mm;max-width:210mm;margin:0 auto}}
     @media print{body{padding:0}}
   </style>
@@ -1407,7 +1573,7 @@ function exportCSV() {
   const accessDate = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const citation = `"Data from Soil Survey Staff, Natural Resources Conservation Service, United States Department of Agriculture. Web Soil Survey. Available online at https://websoilsurvey.nrcs.usda.gov/. Accessed ${accessDate}."`;
 
-  const cols = ['Route','Map Unit','Mukey','Parent Material','Length (ft)','Length (mi)','Pct of Route','Reamer Dia (in)','Abrasion Risk','Closure Risk',
+  const cols = ['Route','Map Unit','Mukey','Parent Material','Length (ft)','Length (mi)','Pct of Route','Reamer Dia (in)','Abrasion Risk','Closure Risk','Texture','Nature','Composition',
     ...(showCost ? ['$/ft','Segment $'] : [])];
   const rows = [cols.join(',')];
   for (const r of _analysisResults) {
@@ -1426,6 +1592,9 @@ function exportCSV() {
         sg.reamDia,
         risk.ab,
         risk.cl,
+        `"${sg.desc?.modifier||''}"`,
+        `"${sg.desc?.genmod||''}"`,
+        `"${sg.desc?.group||''}"`,
         ...(showCost ? [
           sg.med!==null?sg.med.toFixed(2):'',
           sg.med!==null?Math.round(sg.med*sg.ft):'',
@@ -1551,7 +1720,10 @@ async function exportKMZ() {
         Map unit: ${sg.muname} (${sg.musym})<br>
         Parent material: ${sg.pmInfo.label}<br>
         Length: ${Math.round(sg.ft).toLocaleString()} ft (${(sg.ft/5280).toFixed(2)} mi)<br>
-        Reamer: ${sg.reamDia}"${showCost ? `<br>
+        Reamer: ${sg.reamDia}"<br>
+        Texture: ${sg.desc?.modifier||'—'}<br>
+        Nature: ${sg.desc?.genmod||'—'}<br>
+        Composition: ${sg.desc?.group||'—'}${showCost ? `<br>
         $/ft: ${sg.med!==null?'$'+sg.med.toFixed(0):'—'}<br>
         Segment $: ${sg.med!==null?'$'+Math.round(sg.med*sg.ft).toLocaleString():'—'}` : ''}
       ]]></description>
